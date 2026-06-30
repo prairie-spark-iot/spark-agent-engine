@@ -39,6 +39,8 @@ public class TelemetryService {
         Device device = deviceOpt.get();
         LocalDateTime reportTime = toLocalDateTime(msg.getTimestamp());
 
+        deviceRepository.markOnline(device.getId(), LocalDateTime.now());
+
         List<DeviceData> rows = buildRows(msg, device.getId(), reportTime);
         deviceDataRepository.saveAll(rows);
         log.debug("[Telemetry] Saved {} rows for device {}", rows.size(), msg.getDeviceKey());
