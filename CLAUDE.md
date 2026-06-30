@@ -61,7 +61,8 @@ MQTT (EMQX :1883)
         │                     re-subscribes via addConnectedListener on each connect
         ▼
       TelemetryService         @Transactional; one call per MQTT message
-        ├─► DeviceRepository.markOnline()         JPQL UPDATE, no entity load
+        ├─► DeviceHeartbeatService.heartbeat()    Redis SETNX+EX; DB write only on
+        │     └─► DeviceRepository.markOnline()   offline→online transition
         ├─► DeviceDataRepository.saveAll()        batch insert, snowflake IDs
         ├─► KafkaProducerService.sendTelemetry()  one message per property row
         └─► AlertService.evaluate()               per property row
@@ -70,13 +71,18 @@ MQTT (EMQX :1883)
               ├─► AlertRecordRepository.save()
               └─► KafkaProducerService.sendAlert()
 
-DeviceStatusService  @Scheduled every (offlineTimeoutSeconds/2) ms
-  └─► DeviceRepository.markOfflineBatch()
+Redis key expiry (keyspace notification: __keyevent@0__:expired)
+  └─► DeviceHeartbeatService.onMessage()   filters device:online:* keys
+        └─► DeviceRepository.markOffline() DB write only on online→offline transition
 
 ApiController  GET endpoints → DeviceDataRepository / AlertRecordRepository
 ```
 
 ## Key Design Decisions
+
+**Redis heartbeat / state-change writes** — `DeviceHeartbeatService.heartbeat()` does `SET device:online:{key} 1 NX EX {ttl}`. `NX` (set-if-absent) returns true only when the key was missing → device was offline → write DB. If the key already existed the device is already marked online: just call `EXPIRE` to push the TTL window, no DB write. Key expiry fires `onMessage()` via Redis keyspace notification, which writes `online_status=0` to DB. Net result: no DB writes while a device is continuously active.
+
+**Redis keyspace notifications** — `RedisKeyExpirationConfig` calls `CONFIG SET notify-keyspace-events Ex` at startup. "E" = keyevent channel, "x" = expired events. If CONFIG SET is ACL-blocked on your Redis, set it manually: `redis-cli CONFIG SET notify-keyspace-events Ex`. The listener subscribes to `__keyevent@0__:expired` (DB 0; update the topic string if `spring.data.redis.database` is changed).
 
 **Snowflake IDs** — all `INSERT`s generate IDs via `SnowflakeIdGenerator` (machine ID hardcoded to 1). Tables have `bigint` PK with no DB auto-increment.
 
@@ -109,12 +115,18 @@ Hibernate naming: Java camelCase → SQL snake_case (Spring default). No explici
 | EMQX | `localhost:1883` | anonymous auth, MQTT 5 |
 | PostgreSQL | `localhost:5432` | db `spark_ai`, user `root` / `root123456` |
 | Kafka | `localhost:29092` | host-mapped port (internal is 9092) |
+| Redis | `localhost:6379` | no auth; `notify-keyspace-events` auto-set to `Ex` at startup |
 
 Verify Kafka topics: `docker exec spark-kafka /opt/kafka/bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic iot.device.data`
+
+Verify Redis heartbeat keys: `redis-cli KEYS 'device:online:*'` and `redis-cli TTL 'device:online:DK_INJ_001'`
 
 ## Configuration Reference (`application.yaml`)
 
 ```yaml
+spring.data.redis.host: localhost
+spring.data.redis.port: 6379
+
 mqtt:
   host: localhost          # EMQX host
   port: 1883
@@ -122,8 +134,9 @@ mqtt:
   client-id-prefix: spark-agent
 
 app:
-  offline-timeout-seconds: 60    # device marked offline after this long without data
-  alert-debounce-minutes: 5      # suppress duplicate alerts within this window
+  alert-debounce-minutes: 5           # suppress duplicate alerts within this window
+  device-heartbeat-ttl-seconds: 30    # Redis key TTL; set to ~3× the device reporting interval
+  device-heartbeat-key-prefix: "device:online:"
 
 kafka:
   topic:

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 @Component
 @ConfigurationProperties(prefix = "app")
 public class AppProperties {
-    private int offlineTimeoutSeconds = 60;
     private int alertDebounceMinutes = 5;
+    private int deviceHeartbeatTtlSeconds = 30;
+    private String deviceHeartbeatKeyPrefix = "device:online:";
 }

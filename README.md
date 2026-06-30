@@ -35,8 +35,11 @@
 │                                                          │
 │  MqttSubscriber ──► TelemetryService                    │
 │  (HiveMQ async)      │                                   │
-│                      ├─► DeviceRepository               │
-│                      │   (markOnline → aiot_device)     │
+│                      ├─► DeviceHeartbeatService         │
+│                      │     ├── Redis SETNX+EX           │
+│                      │     │   device:online:{key}      │
+│                      │     └── DeviceRepository         │
+│                      │         markOnline (↑ only)      │
 │                      │                                   │
 │                      ├─► DeviceDataRepository           │
 │                      │   (saveAll → aiot_device_data)   │
@@ -52,8 +55,9 @@
 │                          └─► KafkaProducerService       │
 │                              (→ iot.alert.triggered)    │
 │                                                          │
-│  DeviceStatusService ──► DeviceRepository               │
-│  (@Scheduled)            (markOfflineBatch)             │
+│  Redis key expiry ──► DeviceHeartbeatService            │
+│  (keyspace notify)    └── DeviceRepository              │
+│                           markOffline (↓ only)          │
 │                                                          │
 │  ApiController ──► DeviceDataRepository                 │
 │  (REST GET)        AlertRecordRepository                 │
@@ -74,9 +78,10 @@
 - `value`（文本）和 `value_num`（`numeric(20,4)`）双列存储，便于后续聚合
 - ID 由内置雪花算法生成（41 位时间戳 | 10 位机器 | 12 位序列）
 
-### 3. 设备在线状态维护
-- 收到消息时即更新 `aiot_device.online_status=1` 及 `last_online_time`
-- `DeviceStatusService` 定时扫描，超过 `app.offline-timeout-seconds`（默认 60s）未上报的设备标记为离线
+### 3. 设备在线状态维护（Redis 事件驱动）
+- 收到消息时，`DeviceHeartbeatService` 向 Redis 写入 `device:online:{deviceKey}`，TTL 可配置（默认 30s，约 3 个上报周期）
+- **状态变更才写库**：仅当 Redis 中该 key 不存在（离线→在线）时才 UPDATE 数据库，设备持续在线时只刷新 Redis TTL，不产生数据库写入
+- **事件驱动离线检测**：Redis key 过期时通过键空间通知（`notify-keyspace-events=Ex`）触发 `onMessage`，仅在此时写 `online_status=0`，无需定时轮询
 
 ### 4. 告警规则引擎
 - 支持 6 种比较运算符：`gt / lt / gte / lte / eq / ne`
@@ -119,10 +124,19 @@ docker run -d --name spark-postgres \
   -e POSTGRES_USER=root -e POSTGRES_PASSWORD=root123456 \
   -e POSTGRES_DB=spark_ai -p 5432:5432 postgres:16
 
+# Redis（设备心跳 + 键空间通知）
+docker run -d --name spark-redis -p 6379:6379 redis:7
+
 # Kafka (KRaft 模式)
 docker run -d --name spark-kafka \
   -p 29092:9092 apache/kafka:latest
 ```
+
+> **Redis 键空间通知**：本服务启动时自动执行 `CONFIG SET notify-keyspace-events Ex`。
+> 如 Redis 实例禁用了 CONFIG SET（如云服务 ACL 限制），需提前手动执行：
+> ```bash
+> redis-cli CONFIG SET notify-keyspace-events Ex
+> ```
 
 > 数据库表（`aiot_device`、`aiot_device_data`、`aiot_alert_rule`、`aiot_alert_record`）
 > 由配套的管理系统（spark-iot-agent）负责建表，本服务以 `ddl-auto: none` 直接使用。
@@ -140,13 +154,20 @@ spring:
   kafka:
     bootstrap-servers: localhost:29092   # 注意：宿主机映射端口 29092
 
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
 mqtt:
   host: localhost
   port: 1883
 
 app:
-  offline-timeout-seconds: 60   # 超过此时间未上报则标记离线
-  alert-debounce-minutes: 5     # 同一规则防抖窗口
+  alert-debounce-minutes: 5            # 同一规则防抖窗口
+  device-heartbeat-ttl-seconds: 30     # Redis key TTL，约设备上报周期的 3 倍
+  device-heartbeat-key-prefix: "device:online:"
 ```
 
 ### 启动
@@ -161,6 +182,7 @@ app:
 
 启动后观察日志中的关键行：
 ```
+[Redis] Keyspace expiry notifications enabled (notify-keyspace-events=Ex)
 [MQTT] Connecting to localhost:1883
 [MQTT] Subscribed: [GRANTED_QOS_1]
 HikariPool-1 - Start completed.
@@ -174,9 +196,11 @@ Started SparkAgentEngineApplication in X.XXX seconds
 docker exec <pg-container> psql -U root -d spark_ai \
   -c "SELECT device_key, identifier, value, report_time FROM aiot_device_data ORDER BY create_time DESC LIMIT 10;"
 
-# 2. 设备在线状态
+# 2. 设备在线状态（Redis 心跳 key + 数据库）
+redis-cli KEYS 'device:online:*'
+redis-cli TTL 'device:online:DK_INJ_001'
 docker exec <pg-container> psql -U root -d spark_ai \
-  -c "SELECT device_key, online_status, last_online_time FROM aiot_device;"
+  -c "SELECT device_key, online_status, last_online_time, last_offline_time FROM aiot_device;"
 
 # 3. 告警记录（需模拟器注入故障，如 temperature > 260）
 docker exec <pg-container> psql -U root -d spark_ai \
@@ -221,14 +245,15 @@ src/main/java/com/spark/agent/
 │   └── SnowflakeIdGenerator.java      # 雪花 ID 生成器（@Component）
 ├── config/
 │   ├── MqttProperties.java            # mqtt.* 配置绑定
-│   └── AppProperties.java             # app.* 配置绑定
+│   ├── AppProperties.java             # app.* 配置绑定
+│   └── RedisKeyExpirationConfig.java  # RedisMessageListenerContainer + 自动开启键空间通知
 ├── mqtt/
 │   ├── MqttSubscriber.java            # HiveMQ 异步客户端，ApplicationRunner
 │   └── DeviceTelemetryMessage.java    # MQTT 消息体 DTO
 ├── service/
 │   ├── TelemetryService.java          # 核心管道：解析→入库→告警→Kafka
 │   ├── AlertService.java              # 规则匹配、防抖、写告警记录
-│   └── DeviceStatusService.java       # 定时离线扫描
+│   └── DeviceHeartbeatService.java    # Redis 心跳 + 键空间通知回调，状态变更才写库
 ├── kafka/
 │   └── KafkaProducerService.java      # 封装 KafkaTemplate 发送
 ├── entity/
@@ -238,7 +263,7 @@ src/main/java/com/spark/agent/
 │   ├── AlertRule.java
 │   └── AlertRecord.java
 ├── repository/
-│   ├── DeviceRepository.java          # 含 markOnline / markOfflineBatch JPQL
+│   ├── DeviceRepository.java          # 含 markOnline / markOffline JPQL
 │   ├── DeviceDataRepository.java      # 含 findLatestByDeviceKey 关联子查询
 │   ├── AlertRuleRepository.java       # findActiveRules (device+product scope)
 │   └── AlertRecordRepository.java     # countRecentUnhandled (防抖查询)

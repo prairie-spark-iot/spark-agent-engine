@@ -31,6 +31,7 @@ public class TelemetryService {
     private final AlertService alertService;
     private final KafkaProducerService kafkaProducerService;
     private final SnowflakeIdGenerator idGenerator;
+    private final DeviceHeartbeatService heartbeatService;
 
     @Transactional
     public void process(DeviceTelemetryMessage msg) {
@@ -42,7 +43,7 @@ public class TelemetryService {
         Device device = deviceOpt.get();
         LocalDateTime reportTime = toLocalDateTime(msg.getTimestamp());
 
-        deviceRepository.markOnline(device.getId(), LocalDateTime.now());
+        heartbeatService.heartbeat(device.getId(), device.getDeviceKey());
 
         List<DeviceData> rows = buildRows(msg, device.getId(), reportTime);
         deviceDataRepository.saveAll(rows);

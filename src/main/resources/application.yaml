@@ -36,6 +36,13 @@ spring:
         format_sql: false
         generate_statistics: false
 
+  # ── Spring Data Redis ────────────────────────────────────────────────────
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms   # connection + command timeout
+
   # ── Kafka ────────────────────────────────────────────────────────────────
   kafka:
     bootstrap-servers: localhost:29092
@@ -92,10 +99,6 @@ management:
   info:
     env:
       enabled: true
-    java:
-      enabled: true
-    os:
-      enabled: true
 
 info:
   app:
@@ -112,8 +115,11 @@ mqtt:
 
 # ── Custom: Business Rules ────────────────────────────────────────────────
 app:
-  offline-timeout-seconds: 60
   alert-debounce-minutes: 5
+  # Redis heartbeat TTL — device goes offline after this many seconds without a message
+  # Set to ~2-3× the device reporting interval (devices typically report every 5-10 s)
+  device-heartbeat-ttl-seconds: 30
+  device-heartbeat-key-prefix: "device:online:"
 
 # ── Custom: Kafka Topics ──────────────────────────────────────────────────
 kafka:
