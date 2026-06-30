@@ -3,6 +3,7 @@ package com.spark.agent.service;
 import com.spark.agent.common.SnowflakeIdGenerator;
 import com.spark.agent.entity.Device;
 import com.spark.agent.entity.DeviceData;
+import com.spark.agent.kafka.KafkaProducerService;
 import com.spark.agent.mqtt.DeviceTelemetryMessage;
 import com.spark.agent.repository.DeviceDataRepository;
 import com.spark.agent.repository.DeviceRepository;
@@ -27,6 +28,8 @@ public class TelemetryService {
 
     private final DeviceRepository deviceRepository;
     private final DeviceDataRepository deviceDataRepository;
+    private final AlertService alertService;
+    private final KafkaProducerService kafkaProducerService;
     private final SnowflakeIdGenerator idGenerator;
 
     @Transactional
@@ -43,7 +46,13 @@ public class TelemetryService {
 
         List<DeviceData> rows = buildRows(msg, device.getId(), reportTime);
         deviceDataRepository.saveAll(rows);
-        log.debug("[Telemetry] Saved {} rows for device {}", rows.size(), msg.getDeviceKey());
+
+        for (DeviceData row : rows) {
+            kafkaProducerService.sendTelemetry(row);
+            alertService.evaluate(row);
+        }
+
+        log.debug("[Telemetry] Processed {} properties for {}", rows.size(), msg.getDeviceKey());
     }
 
     private List<DeviceData> buildRows(DeviceTelemetryMessage msg, Long deviceId, LocalDateTime reportTime) {
