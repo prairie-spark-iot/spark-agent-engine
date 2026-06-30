@@ -1,10 +1,12 @@
 package com.spark.agent.mqtt;
 
+import tools.jackson.databind.ObjectMapper;
 import com.hivemq.client.mqtt.datatypes.MqttQos;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5AsyncClient;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5Client;
 import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import com.spark.agent.config.MqttProperties;
+import com.spark.agent.service.TelemetryService;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -19,10 +21,14 @@ import java.util.UUID;
 public class MqttSubscriber implements ApplicationRunner {
 
     private final MqttProperties props;
+    private final TelemetryService telemetryService;
+    private final ObjectMapper objectMapper;
     private Mqtt5AsyncClient client;
 
-    public MqttSubscriber(MqttProperties props) {
+    public MqttSubscriber(MqttProperties props, TelemetryService telemetryService, ObjectMapper objectMapper) {
         this.props = props;
+        this.telemetryService = telemetryService;
+        this.objectMapper = objectMapper;
     }
 
     @PostConstruct
@@ -62,13 +68,13 @@ public class MqttSubscriber implements ApplicationRunner {
                 .thenAccept(ack -> log.info("[MQTT] Subscribed: {}", ack.getReasonCodes()));
     }
 
-    // ponytail: placeholder — will be replaced with TelemetryService dispatch in Step 3
     private void handleMessage(Mqtt5Publish message) {
         try {
             String payload = new String(message.getPayloadAsBytes(), StandardCharsets.UTF_8);
-            log.info("[MQTT] topic={} payload={}", message.getTopic(), payload);
+            DeviceTelemetryMessage msg = objectMapper.readValue(payload, DeviceTelemetryMessage.class);
+            telemetryService.process(msg);
         } catch (Exception e) {
-            log.error("[MQTT] Error processing message", e);
+            log.error("[MQTT] Error processing message from {}: {}", message.getTopic(), e.getMessage());
         }
     }
 }
