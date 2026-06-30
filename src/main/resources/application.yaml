@@ -1,33 +1,135 @@
 spring:
   application:
     name: spark-agent-engine
+
+  # ── DataSource + HikariCP ────────────────────────────────────────────────
   datasource:
     url: jdbc:postgresql://localhost:5432/spark_ai
     username: root
     password: root123456
     driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: SparkAgentPool
+      maximum-pool-size: 10
+      minimum-idle: 3
+      auto-commit: false          # @Transactional owns commit boundaries
+      connection-timeout: 30000   # ms; fail-fast if pool exhausted
+      idle-timeout: 600000        # 10 min before closing an idle connection
+      max-lifetime: 1800000       # 30 min hard cap; must be < PostgreSQL idle_in_transaction_session_timeout
+
+  # ── JPA / Hibernate 7 ────────────────────────────────────────────────────
   jpa:
     hibernate:
       ddl-auto: none
     show-sql: false
     open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 50            # batch INSERT for DeviceDataRepository.saveAll(); matched to typical message burst
+          fetch_size: 100           # rows fetched per round-trip for large queries
+          batch_versioned_data: true
+        order_inserts: true         # group same-entity inserts so batching actually fires
+        order_updates: true
+        query:
+          in_clause_parameter_padding: true   # pad IN(:ids) to powers of 2 → better statement cache hit rate
+        format_sql: false
+        generate_statistics: false
+
+  # ── Kafka ────────────────────────────────────────────────────────────────
   kafka:
     bootstrap-servers: localhost:29092
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all                   # wait for all ISR replicas; required when idempotence=true
+      retries: 3
+      batch-size: 16384           # 16 KB; accumulate multiple telemetry events per send
+      linger-ms: 5                # wait up to 5 ms to fill the batch before flushing
+      compression-type: lz4       # fast compression; reduces bandwidth for JSON payloads
+      properties:
+        enable.idempotence: true                    # dedup retries; Kafka 4.x default, made explicit
+        max.in.flight.requests.per.connection: 5    # max with idempotence enabled
+    listener:
+      missing-topics-fatal: false   # don't crash if a consumer topic hasn't been created yet
 
+  # ── Jackson 3.x ──────────────────────────────────────────────────────────
+  # Jackson 3.x moved date features from SerializationFeature to DateTimeFeature (tools.jackson.databind.cfg)
+  # Use spring.jackson.datatype.datetime.* instead of spring.jackson.serialization.*
+  jackson:
+    time-zone: Asia/Shanghai
+    default-property-inclusion: non_null   # omit null fields (root_cause, suggestion…) from REST responses
+    datatype:
+      datetime:
+        write-dates-as-timestamps: false   # LocalDateTime → ISO-8601 string, not epoch array
+        write-durations-as-timestamps: false
+
+# ── Server ───────────────────────────────────────────────────────────────
+server:
+  port: 8080
+  compression:
+    enabled: true
+    mime-types: application/json
+    min-response-size: 1024       # only compress responses > 1 KB
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 10
+    accept-count: 100
+    connection-timeout: 30s
+
+# ── Actuator ─────────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  info:
+    env:
+      enabled: true
+    java:
+      enabled: true
+    os:
+      enabled: true
+
+info:
+  app:
+    name: spark-agent-engine
+    description: "Industrial IoT Device AI Diagnosis Engine — Phase 1: Data Gateway"
+    version: 0.0.1-SNAPSHOT
+
+# ── Custom: MQTT ─────────────────────────────────────────────────────────
 mqtt:
   host: localhost
   port: 1883
   topic: "/sys/+/+/thing/event/property/post"
   client-id-prefix: spark-agent
 
+# ── Custom: Business Rules ────────────────────────────────────────────────
 app:
   offline-timeout-seconds: 60
   alert-debounce-minutes: 5
 
+# ── Custom: Kafka Topics ──────────────────────────────────────────────────
 kafka:
   topic:
     device-data: iot.device.data
     alert-triggered: iot.alert.triggered
+
+# ── Logging ──────────────────────────────────────────────────────────────
+logging:
+  level:
+    root: INFO
+    com.spark.agent: INFO
+    # third-party noise reduction
+    com.hivemq: WARN
+    org.apache.kafka: WARN
+    org.jctools: WARN
+    # SQL debugging: flip to DEBUG / TRACE when needed
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN

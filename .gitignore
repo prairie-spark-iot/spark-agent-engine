@@ -35,3 +35,27 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# 本地配置
+local.properties
+*.properties.local
+
+# 构建产物
+*.jar
+*.war
+*.aar
+*.apk
+*.class
+
+# ========== IDE 相关 ==========
+# IDEA / Android Studio
+.idea/
+
+# ========== 系统文件 ==========
+.DS_Store
+Thumbs.db
+
+# ========== 日志与临时文件 ==========
+*.log
+*.tmp
+*.bak
