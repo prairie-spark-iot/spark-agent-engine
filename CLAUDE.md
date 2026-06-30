@@ -21,11 +21,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 These caused real build failures during development:
 
-**1. Jackson 3.x — package rename**
-Spring Boot 4 ships Jackson 3.x. The core package moved:
+**1. Jackson 3.x — package rename AND feature rename**
+Spring Boot 4 ships Jackson 3.x. Two changes matter:
+
+*Package rename:*
 - Use `tools.jackson.databind.ObjectMapper` (not `com.fasterxml.jackson.databind`)
 - Use `tools.jackson.core.*` for core types
 - Annotations (`@JsonProperty`, `@JsonIgnore`, etc.) remain at `com.fasterxml.jackson.annotation` — unchanged
+
+*Date feature moved:* `SerializationFeature.WRITE_DATES_AS_TIMESTAMPS` no longer exists. Use:
+```yaml
+spring:
+  jackson:
+    datatype:
+      datetime:
+        write-dates-as-timestamps: false   # ISO-8601 dates in REST responses
+```
+`spring.jackson.serialization.write-dates-as-timestamps` will throw a bind error on startup.
 
 **2. Spring Boot 4 auto-configuration module split**
 Boot 4 extracted each auto-configuration into its own module. If you add a new integration (Redis, RabbitMQ, etc.) and the bean is not found despite having the client on the classpath, add the corresponding `spring-boot-<name>` module explicitly:
