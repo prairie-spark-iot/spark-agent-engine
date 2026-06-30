@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: spark-agent-engine
+  datasource:
+    url: jdbc:postgresql://localhost:5432/spark_ai
+    username: root
+    password: root123456
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    open-in-view: false
+  kafka:
+    bootstrap-servers: localhost:29092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+mqtt:
+  host: localhost
+  port: 1883
+  topic: "/sys/+/+/thing/event/property/post"
+  client-id-prefix: spark-agent
+
+app:
+  offline-timeout-seconds: 60
+  alert-debounce-minutes: 5
+
+kafka:
+  topic:
+    device-data: iot.device.data
+    alert-triggered: iot.alert.triggered
