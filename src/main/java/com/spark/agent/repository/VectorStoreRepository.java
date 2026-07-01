@@ -43,6 +43,10 @@ public class VectorStoreRepository {
         List<Object> params = new ArrayList<>();
         params.add(toVectorString(queryEmbedding));
 
+        // Dynamic WHERE assembly is safe: only hardcoded condition fragments
+        // ("deleted = 0", "device_model = ?") are injected via formatted().
+        // All user-supplied values (deviceModel, topK) are passed as parameterized
+        // ? bind variables to JdbcTemplate.
         List<String> conditions = new ArrayList<>();
         conditions.add("deleted = 0");
         if (deviceModel != null && !deviceModel.isBlank()) {

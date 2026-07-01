@@ -20,14 +20,16 @@ public class AlertTriggeredConsumer {
     @KafkaListener(topics = "${kafka.topic.alert-triggered:iot.alert.triggered}", groupId = "diagnosis-agent")
     public void onAlertTriggered(ConsumerRecord<String, String> record) {
         String payload = record.value();
+        Long alertId;
         try {
             AlertRecord alert = objectMapper.readValue(payload, AlertRecord.class);
+            alertId = alert.getId();
             log.info("[Diagnosis] Alert triggered device={} identifier={} level={}",
                     alert.getDeviceKey(), alert.getIdentifier(), alert.getLevel());
         } catch (Exception e) {
             log.error("[Diagnosis] Failed to parse alert message: {}", e.getMessage());
             return;
         }
-        diagnosisAgentService.diagnose(payload);
+        diagnosisAgentService.diagnose(alertId);
     }
 }

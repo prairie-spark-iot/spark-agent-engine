@@ -38,7 +38,7 @@ public class MqttSubscriber implements ApplicationRunner {
     @PostConstruct
     public void initClient() {
         client = Mqtt5Client.builder()
-                .identifier(props.getClientIdPrefix() + "-" + UUID.randomUUID().toString().substring(0, 8))
+                .identifier(props.getClientIdPrefix() + "-" + UUID.randomUUID().toString().replace("-", ""))
                 .serverHost(props.getHost())
                 .serverPort(props.getPort())
                 .automaticReconnectWithDefaultConfig()
