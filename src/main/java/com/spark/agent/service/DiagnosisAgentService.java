@@ -10,11 +10,13 @@ import com.spark.agent.repository.DeviceDataRepository;
 import com.spark.agent.repository.DeviceRepository;
 import com.spark.agent.repository.VectorStoreRepository;
 import jakarta.annotation.PostConstruct;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
@@ -57,14 +59,22 @@ public class DiagnosisAgentService {
         this.chatClient = chatClientBuilder.build();
     }
 
+    @Transactional
     public DiagnosisResult diagnose(String alertMessage) {
-        AlertRecord alert;
+        AlertRecord kafkaAlert;
         try {
-            alert = objectMapper.readValue(alertMessage, AlertRecord.class);
+            kafkaAlert = objectMapper.readValue(alertMessage, AlertRecord.class);
         } catch (Exception e) {
             log.error("[Diagnosis] Failed to parse alert message: {}", e.getMessage());
             return null;
         }
+
+        // The Kafka payload is a detached, possibly-incomplete snapshot (e.g. deleted defaults to 0
+        // via Jackson but any field the producer omitted comes back null). Re-fetch the managed row
+        // from Postgres and do all reads/writes against that instead of the wire object.
+        AlertRecord alert = alertRecordRepository.findById(kafkaAlert.getId())
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "AlertRecord " + kafkaAlert.getId() + " not found for diagnosis"));
 
         Device device = deviceRepository.findByDeviceKeyAndDeleted(alert.getDeviceKey(), (short) 0)
                 .orElse(null);
@@ -131,13 +141,7 @@ public class DiagnosisAgentService {
         return result.confidence() < appProperties.getDiagnosisReflectionConfidenceThreshold() || manuals.isEmpty();
     }
 
-    private void writeBack(AlertRecord alert, DiagnosisResult result) {
-        AlertRecord record = alertRecordRepository.findById(alert.getId()).orElse(null);
-        if (record == null) {
-            log.error("[Diagnosis] AlertRecord {} not found for writeback", alert.getId());
-            return;
-        }
-
+    private void writeBack(AlertRecord record, DiagnosisResult result) {
         boolean autoDiagnosed = result.confidence() >= appProperties.getDiagnosisConfidenceThreshold();
         record.setRootCause(result.rootCause());
         record.setSuggestion(result.suggestion());
@@ -145,9 +149,10 @@ public class DiagnosisAgentService {
         record.setDiagnosisDetail(result.diagnosisDetail());
         record.setDiagnosisStatus(autoDiagnosed ? STATUS_DIAGNOSED : STATUS_HUMAN_REVIEW_REQUIRED);
         record.setDiagnosisTime(LocalDateTime.now());
+        record.setDeleted((short) 0); // a diagnosis writeback must never leave the record logically deleted
         alertRecordRepository.save(record);
 
-        log.info("[Diagnosis] alert={} status={} confidence={}", alert.getId(),
+        log.info("[Diagnosis] alert={} status={} confidence={}", record.getId(),
                 autoDiagnosed ? "AUTO_DIAGNOSED" : "HUMAN_REVIEW_REQUIRED", result.confidence());
     }
 
