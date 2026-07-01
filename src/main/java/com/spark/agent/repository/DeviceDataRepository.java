@@ -23,6 +23,10 @@ public interface DeviceDataRepository extends JpaRepository<DeviceData, Long> {
     List<DeviceData> findByDeviceKeyAndIdentifierAndDeletedOrderByReportTimeDesc(
             String deviceKey, String identifier, Short deleted, org.springframework.data.domain.Pageable pageable);
 
+    List<DeviceData> findByDeviceKeyAndIdentifierAndDeletedAndReportTimeGreaterThanEqualOrderByReportTimeDesc(
+            String deviceKey, String identifier, Short deleted, LocalDateTime since,
+            org.springframework.data.domain.Pageable pageable);
+
     // used by the diagnosis reflection retry to widen telemetry context beyond the latest-per-identifier snapshot
     List<DeviceData> findByDeviceKeyAndDeletedAndReportTimeGreaterThanEqualOrderByReportTimeDesc(
             String deviceKey, Short deleted, LocalDateTime since, org.springframework.data.domain.Pageable pageable);
