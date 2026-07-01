@@ -21,7 +21,7 @@ Package root: `com.spark.agent` — source is `src/main/java/com/spark/agent/`.
 - **Jackson 3**: import `tools.jackson.databind.ObjectMapper`, NOT `com.fasterxml.jackson.databind`. Annotations (`@JsonProperty` etc.) stay at `com.fasterxml.jackson.annotation` — unchanged.
 - **Kafka auto-config**: requires explicit `implementation 'org.springframework.boot:spring-boot-kafka'` in `build.gradle` (Boot 4 split auto-config into per-module jars).
 - **KafkaTemplate generic**: Boot 4 gives `KafkaTemplate<Object, Object>`, inject as that, not `<String, String>`.
-- **`spring-boot-starter-validation` is NOT on classpath** — `@Valid` / `@NotBlank` etc. are silently ignored. Add it to `build.gradle` before using any validation annotations.
+- **`spring-boot-starter-validation`**: now on classpath; `@Valid` / `@NotBlank` can be used.
 - **Date serialization config**: use `spring.jackson.datatype.datetime.write-dates-as-timestamps: false`. The old `spring.jackson.serialization.write-dates-as-timestamps` throws a bind error at startup.
 - **No `@EnableKafka`** needed — the `spring-boot-kafka` auto-config includes `KafkaAnnotationDrivenConfiguration` which provides it. If Kafka listeners don't fire, add `@EnableKafka` on `KafkaConsumerConfig` as a diagnostic.
 - HikariCP: `auto-commit: false` — `@Transactional` owns all commit boundaries.
@@ -50,26 +50,32 @@ MCP tools (DeviceMcpToolService) → same repos + RagSearchService
 
 `TelemetryService.process()` is `@Transactional` and sends Kafka messages inside the transaction. Kafka send is fire-and-forget (CompletableFuture never joined). If the DB rolls back after Kafka send, the Kafka message is already out (at-most-once). **This is a known design limitation**, acceptable for phase 1. Do not "fix" without discussing — the planned upgrade is transactional outbox in phase 2.
 
+### Diagnosis prompt builder
+
+`DiagnosisPromptBuilder` (extracted from `DiagnosisAgentService` in Wave 2) owns all LLM prompt construction — system prompt, user prompt builder, telemetry/alert-history/manual formatting. `DiagnosisAgentService` delegates LLM I/O and orchestration; it never constructs prompt strings directly. This keeps prompt logic unit-testable without mocking the ChatClient or DB repos.
+
 ## Schema management
 
 - **`ddl-auto: none`** — schema never touched by Hibernate. All table DDL is managed by the external `spark-iot-agent` management system.
 - **Composite index `idx_device_data_key_identifier_time`** on `(device_key, identifier, report_time DESC) WHERE deleted = 0` must be created manually on any new environment (see `sql/2026-07-01-device-data-index.sql`). Without it, the `findLatestByDeviceKey` query does full table scans (~68s at 80k rows).
-- **Snowflake IDs** — all PKs generated via `SnowflakeIdGenerator` (machineId hardcoded to 1). Tables use `bigint` PK with no DB auto-increment.
+- **Snowflake IDs** — all PKs generated via `SnowflakeIdGenerator` (machineId configurable, default 1). Tables use `bigint` PK with no DB auto-increment.
 
 ## Known bugs (don't reintroduce)
 
-These exist in the current codebase. When modifying these files, do not remove the guard that would be needed, and if you see a chance to fix them, flag it:
+Status after Wave 1 + Wave 2 audit fixes (commits `8986a6e`, `edf13ba`). Most items below are now **resolved** but kept with a ✓ marker so future edits know the guard was already added:
 
-1. **`AlertTriggeredConsumer.java:30`**: `diagnose()` called unconditionally after `readValue()` exception — no `return` in the catch block. A parse failure will call `diagnose(payload)` with the raw string that just failed to parse.
-2. **`MqttSubscriber.java`**: No `@PreDestroy` — client never disconnects on shutdown (Netty threads + TCP connection leak).
-3. **`MqttSubscriber.java:71`**: HiveMQ callback runs on Netty's event loop thread, but `TelemetryService.process()` does blocking DB I/O. Under load this stalls MQTT keep-alive → EMQX drops the connection.
-4. **`KafkaProducerService.java:37-42`**: Fire-and-forget send (`thenAccept`/`exceptionally` return null). Serialization failures logged and swallowed. Caller gets no signal.
-5. **`SnowflakeIdGenerator.java:22`**: `machineId` hardcoded to 1 — deploying a second instance causes ID collisions. Clock rollback resets sequence to 0, also causing duplicates.
-6. **`DiagnosisAgentService.java:137-143`**: `chatClient.prompt().call()` has no timeout — a stuck Ollama call blocks the Kafka listener thread pool indefinitely.
-7. **`KnowledgeIngestionService.java:31`**: `ingest()` lacks `@Transactional` — embedding failures leave orphaned `knowledge` rows.
-8. **`VectorStoreRepository.java:22-25`**: `saveEmbedding()` is an `UPDATE` — silently succeeds with 0 rows affected if the row doesn't exist.
-9. **No `@RestControllerAdvice`** exists — all exceptions produce Spring's default error response instead of `R<T>`.
-10. **Redis password mismatch**: `application.yaml` sets `password: redis123456` but the dev Docker instance has no `--requirepass`. Heartbeat/offline detection silently non-functional unless you align them.
+| # | Bug | Status |
+|---|---|---|
+| 1 | `AlertTriggeredConsumer.java`: `diagnose()` called unconditionally after `readValue()` exception | ✓ **Fixed** — `return` added in catch block; also changed to pass `alertId` (Long) instead of raw JSON, eliminating the redundant double-parse |
+| 2 | `MqttSubscriber.java`: No `@PreDestroy` | ✓ **Fixed** — `@PreDestroy` `destroy()` calls `client.disconnect()` |
+| 3 | `MqttSubscriber.java:71`: Netty event loop thread does blocking DB I/O | ✓ **Mitigated** — callback delegates to `VirtualThreadPerTaskExecutor` |
+| 4 | `KafkaProducerService.java:37-42`: Fire-and-forget send, no caller signal | **⚠️ Open** — acknowledged design limitation (at-most-once). Phase 2 transactional outbox planned. |
+| 5 | `SnowflakeIdGenerator.java:22`: `machineId` hardcoded to 1 | ✓ **Fixed** — `@Value("${app.snowflake.machine-id:1}")` makes it configurable; clock rollback now throws instead of resetting |
+| 6 | `DiagnosisAgentService.java`: `chatClient.prompt().call()` no timeout | ✓ **Fixed** — wrapped in `CompletableFuture.orTimeout(60, TimeUnit.SECONDS)` |
+| 7 | `KnowledgeIngestionService.java:31`: `ingest()` lacks `@Transactional` | ✓ **Fixed** — extracted `saveChunks()` with `@Transactional`; embedding runs outside transaction |
+| 8 | `VectorStoreRepository.java:22-25`: `saveEmbedding()` is an UPDATE | ✓ **Fixed** — `INSERT ... ON CONFLICT DO UPDATE` (upsert) |
+| 9 | No `@RestControllerAdvice` exists | ✓ **Fixed** — `GlobalExceptionHandler` handles 400 / 404 / 500 |
+| 10 | Redis password mismatch | ✓ **Fixed** — `edac04f` aligned Docker config |
 
 ## REST API
 
