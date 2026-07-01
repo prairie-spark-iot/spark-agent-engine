@@ -1,6 +1,6 @@
 # Knowledge Batch Import Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add `POST /api/knowledge/import` — a batch endpoint that embeds pre-chunked JSON knowledge entries via Ollama `nomic-embed-text` and inserts them into `aiot_knowledge` via raw JdbcTemplate SQL.
 
@@ -30,7 +30,7 @@
 - Produces: `KnowledgeImportItem(String title, Long productId, String deviceModel, Short docType, String source, String chunkText)` — used by Task 2 (`VectorStoreRepository.insertKnowledge`), Task 3 (`KnowledgeIngestionService.importBatch`), Task 4 (`KnowledgeController.importBatch`).
 - Produces: `KnowledgeImportResult(int successCount, int failCount, List<KnowledgeImportResult.FailedItem> failedItems)` with nested `record FailedItem(String title, String reason)` — used by Task 3 and Task 4.
 
-- [ ] **Step 1: Write `KnowledgeImportItem.java`**
+- [x] **Step 1: Write `KnowledgeImportItem.java`**
 
 ```java
 package com.spark.agent.dto;
@@ -40,7 +40,7 @@ public record KnowledgeImportItem(String title, Long productId, String deviceMod
 }
 ```
 
-- [ ] **Step 2: Write `KnowledgeImportResult.java`**
+- [x] **Step 2: Write `KnowledgeImportResult.java`**
 
 ```java
 package com.spark.agent.dto;
@@ -53,12 +53,12 @@ public record KnowledgeImportResult(int successCount, int failCount, List<Knowle
 }
 ```
 
-- [ ] **Step 3: Compile**
+- [x] **Step 3: Compile**
 
 Run: `./gradlew build -x test`
 Expected: `BUILD SUCCESSFUL`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/main/java/com/spark/agent/dto/KnowledgeImportItem.java src/main/java/com/spark/agent/dto/KnowledgeImportResult.java
@@ -76,7 +76,7 @@ git commit -m "feat(knowledge): add batch import DTOs"
 - Consumes: `KnowledgeImportItem` (Task 1), private `toVectorString(float[])` helper already in this class (line 57-64 of the existing file).
 - Produces: `public void insertKnowledge(Long id, KnowledgeImportItem item, float[] embedding)` — used by Task 3 (`KnowledgeIngestionService.importBatch`).
 
-- [ ] **Step 1: Add the import and method**
+- [x] **Step 1: Add the import and method**
 
 Add this import near the top of `VectorStoreRepository.java` (alongside the existing imports):
 
@@ -98,12 +98,12 @@ Add this method to the class, after `saveEmbedding(...)` and before `search(...)
     }
 ```
 
-- [ ] **Step 2: Compile**
+- [x] **Step 2: Compile**
 
 Run: `./gradlew build -x test`
 Expected: `BUILD SUCCESSFUL`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/main/java/com/spark/agent/repository/VectorStoreRepository.java
@@ -121,7 +121,7 @@ git commit -m "feat(knowledge): add raw-SQL insertKnowledge to VectorStoreReposi
 - Consumes: `KnowledgeImportItem`, `KnowledgeImportResult`, `KnowledgeImportResult.FailedItem` (Task 1); `VectorStoreRepository.insertKnowledge(Long, KnowledgeImportItem, float[])` (Task 2); existing fields `embeddingModel` (`EmbeddingModel.embed(String) → float[]`), `idGen` (`SnowflakeIdGenerator.nextId() → Long`), both already present in this class.
 - Produces: `public KnowledgeImportResult importBatch(List<KnowledgeImportItem> items)` — used by Task 4 (`KnowledgeController`).
 
-- [ ] **Step 1: Add imports and the method**
+- [x] **Step 1: Add imports and the method**
 
 Add these imports near the top of `KnowledgeIngestionService.java` (alongside the existing imports):
 
@@ -156,12 +156,12 @@ Add this method to the class, after `ingest(...)` and before the private `chunk(
 
 Note: `ArrayList` and `List` are already imported by the existing file (used by `chunk(...)`), so no new collection imports are needed.
 
-- [ ] **Step 2: Compile**
+- [x] **Step 2: Compile**
 
 Run: `./gradlew build -x test`
 Expected: `BUILD SUCCESSFUL`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/main/java/com/spark/agent/service/KnowledgeIngestionService.java
@@ -179,7 +179,7 @@ git commit -m "feat(knowledge): add importBatch to KnowledgeIngestionService"
 - Consumes: `KnowledgeImportItem`, `KnowledgeImportResult` (Task 1); `KnowledgeIngestionService.importBatch(List<KnowledgeImportItem>)` (Task 3); `com.spark.agent.common.R` (existing response wrapper, `R.ok(T data)`).
 - Produces: `POST /api/knowledge/import` HTTP endpoint.
 
-- [ ] **Step 1: Write `KnowledgeController.java`**
+- [x] **Step 1: Write `KnowledgeController.java`**
 
 ```java
 package com.spark.agent.controller;
@@ -210,24 +210,24 @@ public class KnowledgeController {
 }
 ```
 
-- [ ] **Step 2: Compile**
+- [x] **Step 2: Compile**
 
 Run: `./gradlew build -x test`
 Expected: `BUILD SUCCESSFUL`
 
-- [ ] **Step 3: Confirm infra is up**
+- [x] **Step 3: Confirm infra is up**
 
 Run: `docker ps --format '{{.Names}}'`
 Expected: sees running containers for EMQX, PostgreSQL, Kafka, Redis (per CLAUDE.md's infra table). If Ollama is not in Docker, separately confirm it's reachable:
 Run: `curl -s http://localhost:11434/api/tags | head -c 200`
 Expected: JSON listing local models, including `nomic-embed-text`.
 
-- [ ] **Step 4: Start the app**
+- [x] **Step 4: Start the app**
 
 Run (background): `./gradlew bootRun --args='--server.port=8081'`
 Expected: log line `Started SparkAgentEngineApplication` with no stack trace.
 
-- [ ] **Step 5: Write a small test fixture and call the endpoint**
+- [x] **Step 5: Write a small test fixture and call the endpoint**
 
 Write `/tmp/claude-1000/-home-spark-Projects-AI-spark-agent-engine/d1ef3b3b-8da0-4bbe-97c8-0bc181052659/scratchpad/knowledge-import-test.json`:
 
@@ -261,7 +261,7 @@ curl -s -X POST http://localhost:8081/api/knowledge/import \
 
 Expected: `{"code":0,"msg":"success","data":{"successCount":2,"failCount":0,"failedItems":[]}}`
 
-- [ ] **Step 6: Verify rows landed in Postgres with a real vector**
+- [x] **Step 6: Verify rows landed in Postgres with a real vector**
 
 Run:
 ```bash
@@ -271,11 +271,11 @@ docker exec spark-postgres psql -U root -d spark_ai -c \
 
 Expected: 2 rows, `dims = 768`, the second row's `product_id` is `NULL`.
 
-- [ ] **Step 7: Stop the app**
+- [x] **Step 7: Stop the app**
 
 Stop the background `bootRun` process (e.g. via the background task tool / `kill` the tracked PID).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/main/java/com/spark/agent/controller/KnowledgeController.java
@@ -283,6 +283,10 @@ git commit -m "feat(knowledge): add POST /api/knowledge/import endpoint"
 ```
 
 ---
+
+## Deviation Found During Execution
+
+Task 4 verification (Step 5-6) initially returned `successCount: 2` but 0 rows landed in Postgres. Root cause: `application.yaml` sets `spring.datasource.hikari.auto-commit: false` ("@Transactional owns commit boundaries" per its own comment) project-wide, and the plan's `insertKnowledge` method (Task 2) was missing `@Transactional` — unlike the pre-existing `saveEmbedding` method in the same class, which has it. The insert executed without error but was never committed. Fixed by adding `@Transactional` to `insertKnowledge`; re-verified successfully (rows persisted with correct 768-dim vectors, null `product_id` handled, and a mixed success/failure batch correctly committed the success and rolled back only the failed row).
 
 ## Self-Review Notes
 
