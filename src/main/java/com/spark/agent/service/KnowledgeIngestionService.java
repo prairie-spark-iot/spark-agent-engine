@@ -28,13 +28,22 @@ public class KnowledgeIngestionService {
 
     private static final int CHUNK_SIZE = 500;
 
-    // Embed all chunks before opening any DB connection to avoid holding HikariCP connections during Ollama HTTP calls.
-    @Transactional
     public int ingest(String title, String content, Short docType,
                       String deviceModel, Long productId, String source) {
+        // Embed all chunks before opening any DB transaction to avoid
+        // holding HikariCP connections during Ollama HTTP calls.
         List<String> chunks = chunk(content);
         List<float[]> embeddings = chunks.stream().map(embeddingModel::embed).toList();
 
+        saveChunks(title, docType, deviceModel, productId, source, chunks, embeddings);
+
+        log.info("[RAG] Ingested '{}' → {} chunk(s)", title, chunks.size());
+        return chunks.size();
+    }
+
+    @Transactional
+    protected void saveChunks(String title, Short docType, String deviceModel, Long productId,
+                              String source, List<String> chunks, List<float[]> embeddings) {
         for (int i = 0; i < chunks.size(); i++) {
             Knowledge k = new Knowledge();
             k.setId(idGen.nextId());
@@ -47,12 +56,8 @@ public class KnowledgeIngestionService {
             knowledgeRepository.save(k);
             vectorStoreRepository.saveEmbedding(k.getId(), embeddings.get(i));
         }
-
-        log.info("[RAG] Ingested '{}' → {} chunk(s)", title, chunks.size());
-        return chunks.size();
     }
 
-    @Transactional
     public KnowledgeImportResult importBatch(List<KnowledgeImportItem> items) {
         int successCount = 0;
         List<FailedItem> failedItems = new ArrayList<>();
