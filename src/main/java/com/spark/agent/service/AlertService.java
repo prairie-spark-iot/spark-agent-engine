@@ -35,6 +35,7 @@ public class AlertService {
     }
     private final Map<String, CacheEntry<List<AlertRule>>> rulesCache = new ConcurrentHashMap<>();
     private static final long RULES_CACHE_TTL_MS = 5_000;
+    private static final int RULES_CACHE_MAX_SIZE = 10_000;
 
     private List<AlertRule> getActiveRules(Long deviceId, String identifier) {
         String key = deviceId + ":" + identifier;
@@ -44,7 +45,21 @@ public class AlertService {
         }
         List<AlertRule> rules = alertRuleRepository.findActiveRules(deviceId, identifier);
         rulesCache.put(key, new CacheEntry<>(rules, System.currentTimeMillis() + RULES_CACHE_TTL_MS));
+        if (rulesCache.size() > RULES_CACHE_MAX_SIZE) {
+            evictStaleCacheEntries();
+        }
         return rules;
+    }
+
+    /**
+     * Remove expired entries from the rules cache to prevent unbounded memory growth.
+     * Called when the cache exceeds the configured max size.
+     */
+    private void evictStaleCacheEntries() {
+        int before = rulesCache.size();
+        rulesCache.entrySet().removeIf(e -> !e.getValue().isValid());
+        log.debug("[Alert] Rules cache eviction: {} → {} entries ({} stale removed)",
+                before, rulesCache.size(), before - rulesCache.size());
     }
 
     private final AlertRuleRepository alertRuleRepository;
