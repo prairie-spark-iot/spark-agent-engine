@@ -60,6 +60,9 @@ spring:
         max.in.flight.requests.per.connection: 5    # max with idempotence enabled
     listener:
       missing-topics-fatal: false   # don't crash if a consumer topic hasn't been created yet
+      # iot.alert.triggered has 6 partitions (widened from 1); one listener thread per
+      # partition so the ~45s LLM-bound diagnosis of one alert no longer blocks the rest.
+      concurrency: 6
 
   # ── Jackson 3.x ──────────────────────────────────────────────────────────
   # Jackson 3.x moved date features from SerializationFeature to DateTimeFeature (tools.jackson.databind.cfg)
@@ -156,5 +159,5 @@ logging:
     org.apache.kafka: WARN
     org.jctools: WARN
     # SQL debugging: flip to DEBUG / TRACE when needed
-    org.hibernate.SQL: DEBUG
+    org.hibernate.SQL: WARN
     org.hibernate.orm.jdbc.bind: WARN
