@@ -86,6 +86,12 @@ spring:
         model: nomic-embed-text
       chat:
         model: qwen2.5:7b
+    mcp:
+      server:
+        name: spark-agent-engine-mcp
+        version: 0.0.1-SNAPSHOT
+        type: SYNC
+        protocol: STREAMABLE
 
 # ── Server ───────────────────────────────────────────────────────────────
 server:
