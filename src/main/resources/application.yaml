@@ -76,10 +76,13 @@ spring:
   ai:
     model:
       embedding: ollama
+      chat: ollama
     ollama:
       base-url: http://localhost:11434
       embedding:
         model: nomic-embed-text
+      chat:
+        model: qwen2.5:7b
 
 # ── Server ───────────────────────────────────────────────────────────────
 server:
