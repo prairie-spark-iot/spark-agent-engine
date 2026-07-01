@@ -1,0 +1,48 @@
+# .dockerignore — trim Docker build context
+
+# Git
+.git/
+.gitattributes
+.gitignore
+
+# Gradle — not needed for pre-built JAR strategy
+.gradle/
+gradle/
+gradlew
+build.gradle
+build.gradle.kts
+settings.gradle
+settings.gradle.kts
+
+# IDE
+.idea/
+*.iml
+.classpath
+.project
+.settings
+.factorypath
+
+# Agent config
+.claude/
+.superpowers/
+.omo/
+.opencode/
+.codegraph/
+
+# Docs
+docs/
+*.md
+
+# Docker self-reference
+docker-compose.yml
+.env
+
+# System files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs / temp
+*.log
+tmp/

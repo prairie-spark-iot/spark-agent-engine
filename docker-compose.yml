@@ -1,0 +1,78 @@
+# spark-agent-engine — application service
+# Infrastructure (PG / Redis / Kafka / EMQX) runs in spark-ai-infra.
+#
+#   docker compose build           # Build image
+#   docker compose up -d           # Start application
+#   docker compose logs -f         # View logs
+#   docker compose down            # Stop application
+
+name: spark-agent-app
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: spark-agent-engine:latest
+    container_name: spark-agent
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      # ── JVM ──
+      JAVA_TOOL_OPTIONS: >
+        -Xms${JVM_XMS} -Xmx${JVM_XMX}
+        -XX:+UseZGC
+        -XX:+AlwaysPreTouch
+        -XX:+UseCompactObjectHeaders
+        -XX:+HeapDumpOnOutOfMemoryError
+        -XX:HeapDumpPath=/tmp/heapdump.hprof
+      # ── PostgreSQL ──
+      SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:postgresql://postgres:5432/spark_ai}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-root}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-root123456}
+      SPRING_DATASOURCE_HIKARI_AUTO_COMMIT: "false"
+      # ── Redis ──
+      SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-redis}
+      SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123456}
+      # ── Kafka ──
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      # ── MQTT ──
+      MQTT_HOST: ${MQTT_HOST:-emqx}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      # ── Runtime ──
+      TZ: ${TZ}
+      LOGGING_LEVEL_COM_SPARK_AGENT: ${LOG_LEVEL}
+    volumes:
+      - app-logs:/var/log/app
+    logging: *default-logging
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: "${APP_CPU_LIMIT:-2}"
+          memory: "${APP_MEM_LIMIT:-4G}"
+    networks:
+      - spark-net
+
+volumes:
+  app-logs:
+    name: spark-app-logs
+
+networks:
+  spark-net:
+    external: true
+    name: spark-ai-infra_spark-net
