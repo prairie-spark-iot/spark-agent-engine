@@ -5,6 +5,7 @@ import com.spark.agent.entity.AlertRecord;
 import com.spark.agent.entity.DeviceData;
 import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.DeviceDataRepository;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
@@ -22,7 +23,11 @@ public class ApiController {
     /** Latest value per identifier for the given device */
     @GetMapping("/device/{deviceKey}/latest")
     public R<List<DeviceData>> latest(@PathVariable String deviceKey) {
-        return R.ok(deviceDataRepository.findLatestByDeviceKey(deviceKey));
+        List<DeviceData> result = deviceDataRepository.findLatestByDeviceKey(deviceKey);
+        if (result.isEmpty()) {
+            throw new EntityNotFoundException("Device key not found or has no data: " + deviceKey);
+        }
+        return R.ok(result);
     }
 
     /** History for one identifier (default last 50) */

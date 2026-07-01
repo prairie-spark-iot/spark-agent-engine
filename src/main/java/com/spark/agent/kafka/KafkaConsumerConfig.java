@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.util.backoff.FixedBackOff;
 
 /**
@@ -23,6 +24,7 @@ public class KafkaConsumerConfig {
     public DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<Object, Object> kafkaTemplate) {
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate);
         DefaultErrorHandler handler = new DefaultErrorHandler(recoverer, new FixedBackOff(2000L, 2));
+        handler.addNotRetryableExceptions(DeserializationException.class);
         handler.setRetryListeners((consumerRecord, ex, deliveryAttempt) ->
                 log.warn("[Kafka] Retry {} for topic={} partition={} offset={}: {}",
                         deliveryAttempt, consumerRecord.topic(), consumerRecord.partition(),

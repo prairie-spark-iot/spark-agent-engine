@@ -47,6 +47,7 @@ public class TelemetryService {
 
         List<DeviceData> rows = buildRows(msg, device.getId(), reportTime);
         deviceDataRepository.saveAll(rows);
+        deviceDataRepository.flush();
 
         for (DeviceData row : rows) {
             kafkaProducerService.sendTelemetry(row);

@@ -178,10 +178,14 @@ public class DiagnosisAgentService {
     }
 
     private String formatManuals(List<VectorStoreRepository.SearchResult> manuals) {
+        final int MAX_EXCERPT_LENGTH = 4000;
         String excerpts = manuals.stream()
                 .map(m -> "[%s] %s".formatted(m.title(), m.chunkText()))
                 .collect(Collectors.joining("\n---\n"));
-        return excerpts.isBlank() ? "none found" : excerpts;
+        if (excerpts.isBlank()) return "none found";
+        return excerpts.length() <= MAX_EXCERPT_LENGTH
+                ? excerpts
+                : excerpts.substring(0, MAX_EXCERPT_LENGTH) + "\n---\n[truncated]";
     }
 
     private String buildUserPrompt(AlertRecord alert, Device device, String telemetryTrend,

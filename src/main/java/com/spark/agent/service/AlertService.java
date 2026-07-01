@@ -14,11 +14,38 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import static java.util.Collections.emptyList;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AlertService {
+
+    private final Map<String, Object> debounceLocks = new ConcurrentHashMap<>();
+
+    private Object debounceLock(Long deviceId, Long ruleId) {
+        return debounceLocks.computeIfAbsent(deviceId + ":" + ruleId, k -> new Object());
+    }
+
+    private record CacheEntry<V>(V value, long expiresAt) {
+        boolean isValid() { return System.currentTimeMillis() < expiresAt; }
+    }
+    private final Map<String, CacheEntry<List<AlertRule>>> rulesCache = new ConcurrentHashMap<>();
+    private static final long RULES_CACHE_TTL_MS = 5_000;
+
+    private List<AlertRule> getActiveRules(Long deviceId, String identifier) {
+        String key = deviceId + ":" + identifier;
+        CacheEntry<List<AlertRule>> entry = rulesCache.get(key);
+        if (entry != null && entry.isValid()) {
+            return entry.value();
+        }
+        List<AlertRule> rules = alertRuleRepository.findActiveRules(deviceId, identifier);
+        rulesCache.put(key, new CacheEntry<>(rules, System.currentTimeMillis() + RULES_CACHE_TTL_MS));
+        return rules;
+    }
 
     private final AlertRuleRepository alertRuleRepository;
     private final AlertRecordRepository alertRecordRepository;
@@ -29,17 +56,20 @@ public class AlertService {
     public void evaluate(DeviceData data) {
         if (data.getValueNum() == null) return;
 
-        List<AlertRule> rules = alertRuleRepository.findActiveRules(data.getDeviceId(), data.getIdentifier());
+        List<AlertRule> rules = getActiveRules(data.getDeviceId(), data.getIdentifier());
         double value = data.getValueNum().doubleValue();
 
         for (AlertRule rule : rules) {
             if (!matches(rule, value)) continue;
-            if (isDebounced(data.getDeviceId(), rule.getId())) continue;
 
-            AlertRecord record = buildRecord(data, rule, value);
-            alertRecordRepository.save(record);
-            kafkaProducerService.sendAlert(record);
-            log.info("[Alert] Rule '{}' triggered for {} {}: {}", rule.getName(), data.getDeviceKey(), data.getIdentifier(), value);
+            synchronized (debounceLock(data.getDeviceId(), rule.getId())) {
+                if (isDebounced(data.getDeviceId(), rule.getId())) continue;
+
+                AlertRecord record = buildRecord(data, rule, value);
+                alertRecordRepository.save(record);
+                kafkaProducerService.sendAlert(record);
+                log.info("[Alert] Rule '{}' triggered for {} {}: {}", rule.getName(), data.getDeviceKey(), data.getIdentifier(), value);
+            }
         }
     }
 

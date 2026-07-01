@@ -52,6 +52,7 @@ public class KnowledgeIngestionService {
         return chunks.size();
     }
 
+    @Transactional
     public KnowledgeImportResult importBatch(List<KnowledgeImportItem> items) {
         int successCount = 0;
         List<FailedItem> failedItems = new ArrayList<>();

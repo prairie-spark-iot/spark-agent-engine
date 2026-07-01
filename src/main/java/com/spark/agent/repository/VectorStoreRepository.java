@@ -43,9 +43,10 @@ public class VectorStoreRepository {
         List<Object> params = new ArrayList<>();
         params.add(toVectorString(queryEmbedding));
 
-        String filter = "deleted = 0";
+        List<String> conditions = new ArrayList<>();
+        conditions.add("deleted = 0");
         if (deviceModel != null && !deviceModel.isBlank()) {
-            filter += " AND device_model = ?";
+            conditions.add("device_model = ?");
             params.add(deviceModel);
         }
         params.add(topK);
@@ -57,7 +58,7 @@ public class VectorStoreRepository {
                 WHERE %s
                 ORDER BY distance
                 LIMIT ?
-                """.formatted(filter);
+                """.formatted(String.join(" AND ", conditions));
 
         return jdbc.query(sql, (rs, i) -> new SearchResult(
                 rs.getLong("id"),

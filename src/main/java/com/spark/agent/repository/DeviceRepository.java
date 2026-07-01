@@ -12,11 +12,11 @@ public interface DeviceRepository extends JpaRepository<Device, Long> {
 
     Optional<Device> findByDeviceKeyAndDeleted(String deviceKey, Short deleted);
 
-    @Modifying
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE Device d SET d.onlineStatus = 1, d.lastOnlineTime = :time, d.updateTime = :time WHERE d.id = :id")
     void markOnline(Long id, LocalDateTime time);
 
-    @Modifying
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE Device d SET d.onlineStatus = 0, d.lastOfflineTime = :time, d.updateTime = :time WHERE d.id = :id")
     void markOffline(Long id, LocalDateTime time);
 }
