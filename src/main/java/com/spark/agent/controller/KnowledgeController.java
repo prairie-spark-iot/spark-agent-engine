@@ -24,10 +24,10 @@ public class KnowledgeController {
     @PostMapping("/import")
     public R<KnowledgeImportResult> importBatch(@RequestBody List<KnowledgeImportItem> items) {
         if (items == null || items.isEmpty()) {
-            return R.fail("Import list must not be empty");
+            return R.fail(400, "Import list must not be empty");
         }
         if (items.size() > MAX_BATCH_SIZE) {
-            return R.fail("Batch size %d exceeds maximum %d".formatted(items.size(), MAX_BATCH_SIZE));
+            return R.fail(400, "Batch size %d exceeds maximum %d".formatted(items.size(), MAX_BATCH_SIZE));
         }
         return R.ok(ingestionService.importBatch(items));
     }

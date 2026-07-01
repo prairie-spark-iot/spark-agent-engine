@@ -5,7 +5,6 @@ import com.spark.agent.entity.AlertRecord;
 import com.spark.agent.entity.DeviceData;
 import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.DeviceDataRepository;
-import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
@@ -25,28 +24,32 @@ public class ApiController {
     public R<List<DeviceData>> latest(@PathVariable String deviceKey) {
         List<DeviceData> result = deviceDataRepository.findLatestByDeviceKey(deviceKey);
         if (result.isEmpty()) {
-            throw new EntityNotFoundException("Device key not found or has no data: " + deviceKey);
+            return R.fail(404, "Device key not found or has no data: " + deviceKey);
         }
         return R.ok(result);
     }
 
-    /** History for one identifier (default last 50) */
+    private static final int MAX_LIMIT = 500;
+
+    /** History for one identifier (default last 50, max 500) */
     @GetMapping("/device/{deviceKey}/history")
     public R<List<DeviceData>> history(
             @PathVariable String deviceKey,
             @RequestParam String identifier,
             @RequestParam(defaultValue = "50") int limit) {
+        int capped = Math.min(Math.max(limit, 1), MAX_LIMIT);
         List<DeviceData> rows = deviceDataRepository
                 .findByDeviceKeyAndIdentifierAndDeletedOrderByReportTimeDesc(
-                        deviceKey, identifier, (short) 0, PageRequest.of(0, limit));
+                        deviceKey, identifier, (short) 0, PageRequest.of(0, capped));
         return R.ok(rows);
     }
 
-    /** Most recent alert records */
+    /** Most recent alert records (max 500) */
     @GetMapping("/alert/recent")
     public R<List<AlertRecord>> recentAlerts(
             @RequestParam(defaultValue = "20") int limit) {
+        int capped = Math.min(Math.max(limit, 1), MAX_LIMIT);
         return R.ok(alertRecordRepository.findByDeletedOrderByTriggerTimeDesc(
-                (short) 0, PageRequest.of(0, limit)));
+                (short) 0, PageRequest.of(0, capped)));
     }
 }
