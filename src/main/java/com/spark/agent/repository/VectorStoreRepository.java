@@ -24,6 +24,7 @@ public class VectorStoreRepository {
                 toVectorString(embedding), id);
     }
 
+    @Transactional
     public void insertKnowledge(Long id, KnowledgeImportItem item, float[] embedding) {
         jdbc.update("""
                 INSERT INTO aiot_knowledge (id, title, doc_type, product_id, device_model,
