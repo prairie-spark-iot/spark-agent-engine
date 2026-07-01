@@ -133,6 +133,12 @@ app:
   # Set to ~2-3× the device reporting interval (devices typically report every 5-10 s)
   device-heartbeat-ttl-seconds: 30
   device-heartbeat-key-prefix: "device:online:"
+  # diagnosis confidence gate — >= this, diagnosis_status=2 (auto); below, human_review_required
+  diagnosis-confidence-threshold: 80
+  # diagnosis reflection retry — below this confidence (or empty RAG results), retry once with more context
+  diagnosis-reflection-confidence-threshold: 40
+  # widened telemetry lookback (minutes) used only on the reflection retry pass
+  diagnosis-reflection-telemetry-window-minutes: 120
 
 # ── Custom: Kafka Topics ──────────────────────────────────────────────────
 kafka:

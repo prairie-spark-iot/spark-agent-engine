@@ -11,4 +11,11 @@ public class AppProperties {
     private int alertDebounceMinutes = 5;
     private int deviceHeartbeatTtlSeconds = 30;
     private String deviceHeartbeatKeyPrefix = "device:online:";
+
+    /** confidence (0-100) at/above which a diagnosis is accepted without human review */
+    private int diagnosisConfidenceThreshold = 80;
+    /** confidence (0-100) below which the reflection retry kicks in */
+    private int diagnosisReflectionConfidenceThreshold = 40;
+    /** telemetry lookback window used only during the reflection retry */
+    private int diagnosisReflectionTelemetryWindowMinutes = 120;
 }

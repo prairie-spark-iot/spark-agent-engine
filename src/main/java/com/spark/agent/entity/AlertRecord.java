@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Getter
@@ -41,7 +42,7 @@ public class AlertRecord extends BaseEntity {
     @Column(name = "trigger_time", nullable = false)
     private LocalDateTime triggerTime;
 
-    /** 0=pending 1=diagnosed */
+    /** 0=pending 1=human_review_required 2=diagnosed (auto, confidence above gate) */
     @Column(name = "diagnosis_status", nullable = false)
     private Short diagnosisStatus = 0;
 
@@ -49,10 +50,19 @@ public class AlertRecord extends BaseEntity {
     @Column(name = "handle_status", nullable = false)
     private Short handleStatus = 0;
 
-    // AI diagnosis fields — populated in a later phase
+    // AI diagnosis fields
     @Column(name = "root_cause", columnDefinition = "text")
     private String rootCause;
 
     @Column(name = "suggestion", columnDefinition = "text")
     private String suggestion;
+
+    @Column(name = "confidence", precision = 5, scale = 2)
+    private BigDecimal confidence;
+
+    @Column(name = "diagnosis_detail", columnDefinition = "text")
+    private String diagnosisDetail;
+
+    @Column(name = "diagnosis_time")
+    private LocalDateTime diagnosisTime;
 }
