@@ -15,6 +15,9 @@ public class RagSearchService {
     private final VectorStoreRepository vectorStoreRepository;
 
     public List<VectorStoreRepository.SearchResult> search(String query, String deviceModel, int topK) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
         float[] embedding = embeddingModel.embed(query);
         return vectorStoreRepository.search(embedding, deviceModel, topK);
     }

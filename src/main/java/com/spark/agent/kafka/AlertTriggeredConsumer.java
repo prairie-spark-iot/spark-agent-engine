@@ -26,6 +26,7 @@ public class AlertTriggeredConsumer {
                     alert.getDeviceKey(), alert.getIdentifier(), alert.getLevel());
         } catch (Exception e) {
             log.error("[Diagnosis] Failed to parse alert message: {}", e.getMessage());
+            return;
         }
         diagnosisAgentService.diagnose(payload);
     }

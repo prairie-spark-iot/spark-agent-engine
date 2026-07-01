@@ -46,13 +46,14 @@ public class AlertService {
     private boolean matches(AlertRule rule, double value) {
         try {
             double threshold = Double.parseDouble(rule.getThreshold());
+            double epsilon = 1e-10;
             return switch (rule.getOperator()) {
                 case "gt"  -> value > threshold;
                 case "lt"  -> value < threshold;
                 case "gte" -> value >= threshold;
                 case "lte" -> value <= threshold;
-                case "eq"  -> value == threshold;
-                case "ne"  -> value != threshold;
+                case "eq"  -> Math.abs(value - threshold) < epsilon;
+                case "ne"  -> Math.abs(value - threshold) >= epsilon;
                 default -> {
                     log.warn("[Alert] Unknown operator: {}", rule.getOperator());
                     yield false;

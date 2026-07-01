@@ -19,8 +19,16 @@ public class KnowledgeController {
 
     private final KnowledgeIngestionService ingestionService;
 
+    private static final int MAX_BATCH_SIZE = 50;
+
     @PostMapping("/import")
     public R<KnowledgeImportResult> importBatch(@RequestBody List<KnowledgeImportItem> items) {
+        if (items == null || items.isEmpty()) {
+            return R.fail("Import list must not be empty");
+        }
+        if (items.size() > MAX_BATCH_SIZE) {
+            return R.fail("Batch size %d exceeds maximum %d".formatted(items.size(), MAX_BATCH_SIZE));
+        }
         return R.ok(ingestionService.importBatch(items));
     }
 }

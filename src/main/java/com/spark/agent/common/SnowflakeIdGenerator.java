@@ -1,5 +1,6 @@
 package com.spark.agent.common;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -19,12 +20,16 @@ public class SnowflakeIdGenerator {
     private long lastTimestamp = -1;
     private long sequence = 0;
 
-    public SnowflakeIdGenerator() {
-        this.machineId = 1;
+    public SnowflakeIdGenerator(@Value("${app.snowflake.machine-id:1}") long machineId) {
+        this.machineId = machineId;
     }
 
     public synchronized long nextId() {
         long ts = System.currentTimeMillis() - EPOCH;
+        if (ts < lastTimestamp) {
+            throw new IllegalStateException(
+                    "Clock moved backwards. Refusing to generate ID for %d ms".formatted(lastTimestamp - ts));
+        }
         if (ts == lastTimestamp) {
             sequence = (sequence + 1) & MAX_SEQUENCE;
             if (sequence == 0) {

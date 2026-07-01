@@ -58,7 +58,12 @@ public class TelemetryService {
 
     private List<DeviceData> buildRows(DeviceTelemetryMessage msg, Long deviceId, LocalDateTime reportTime) {
         List<DeviceData> rows = new ArrayList<>();
-        for (Map.Entry<String, Object> entry : msg.getProperties().entrySet()) {
+        Map<String, Object> properties = msg.getProperties();
+        if (properties == null || properties.isEmpty()) {
+            log.warn("[Telemetry] Message from {} has null/empty properties", msg.getDeviceKey());
+            return rows;
+        }
+        for (Map.Entry<String, Object> entry : properties.entrySet()) {
             DeviceData data = new DeviceData();
             data.setId(idGenerator.nextId());
             data.setDeviceId(deviceId);

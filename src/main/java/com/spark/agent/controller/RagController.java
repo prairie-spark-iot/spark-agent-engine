@@ -32,7 +32,10 @@ public class RagController {
 
     @PostMapping("/search")
     public R<List<VectorStoreRepository.SearchResult>> search(@RequestBody SearchRequest req) {
-        int topK = req.topK() > 0 ? req.topK() : 5;
+        if (req.query() == null || req.query().isBlank()) {
+            return R.fail("query must not be empty");
+        }
+        int topK = req.topK() > 0 ? Math.min(req.topK(), 20) : 5;
         return R.ok(searchService.search(req.query(), req.deviceModel(), topK));
     }
 }

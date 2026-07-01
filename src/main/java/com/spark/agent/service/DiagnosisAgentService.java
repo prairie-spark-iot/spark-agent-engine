@@ -24,6 +24,8 @@ import tools.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -135,11 +137,18 @@ public class DiagnosisAgentService {
     }
 
     private DiagnosisResult runInference(String userPrompt) {
-        return chatClient.prompt()
-                .system(SYSTEM_PROMPT)
-                .user(userPrompt)
-                .call()
-                .entity(DiagnosisResult.class);
+        try {
+            return CompletableFuture.supplyAsync(() ->
+                    chatClient.prompt()
+                            .system(SYSTEM_PROMPT)
+                            .user(userPrompt)
+                            .call()
+                            .entity(DiagnosisResult.class)
+            ).orTimeout(60, TimeUnit.SECONDS).join();
+        } catch (Exception e) {
+            log.error("[Diagnosis] LLM inference failed or timed out: {}", e.getMessage());
+            return new DiagnosisResult("", "", 0, "Inference failed: " + e.getMessage());
+        }
     }
 
     private boolean needsReflection(DiagnosisResult result, List<VectorStoreRepository.SearchResult> manuals) {
@@ -163,7 +172,7 @@ public class DiagnosisAgentService {
 
     private String formatTelemetry(List<DeviceData> telemetry, String windowLabel) {
         String trend = telemetry.stream()
-                .map(d -> "%s=%s @ %s".formatted(d.getIdentifier(), d.getValue(), d.getReportTime()))
+                .map(d -> "%s=%s @ %s".formatted(d.getIdentifier(), d.getValue() != null ? d.getValue() : "null", d.getReportTime()))
                 .collect(Collectors.joining("\n"));
         return trend.isBlank() ? "no data (%s)".formatted(windowLabel) : trend;
     }

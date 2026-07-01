@@ -8,7 +8,7 @@ public class R<T> {
     private final String msg;
     private final T data;
 
-    private R(int code, String msg, T data) {
+    public R(int code, String msg, T data) {
         this.code = code;
         this.msg = msg;
         this.data = data;

@@ -20,8 +20,12 @@ public class VectorStoreRepository {
 
     @Transactional
     public void saveEmbedding(Long id, float[] embedding) {
-        jdbc.update("UPDATE aiot_knowledge SET embedding = ?::vector WHERE id = ?",
-                toVectorString(embedding), id);
+        jdbc.update("""
+                INSERT INTO aiot_knowledge (id, embedding, creator, tenant_id, deleted, create_time, update_time)
+                VALUES (?, ?::vector, 'system', 1, 0, now(), now())
+                ON CONFLICT (id) DO UPDATE SET embedding = EXCLUDED.embedding, update_time = now()
+                """,
+                id, toVectorString(embedding));
     }
 
     @Transactional

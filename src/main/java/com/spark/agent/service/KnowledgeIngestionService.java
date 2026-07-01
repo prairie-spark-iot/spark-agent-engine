@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +29,7 @@ public class KnowledgeIngestionService {
     private static final int CHUNK_SIZE = 500;
 
     // Embed all chunks before opening any DB connection to avoid holding HikariCP connections during Ollama HTTP calls.
+    @Transactional
     public int ingest(String title, String content, Short docType,
                       String deviceModel, Long productId, String source) {
         List<String> chunks = chunk(content);

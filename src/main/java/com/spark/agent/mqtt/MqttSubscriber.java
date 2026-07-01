@@ -8,6 +8,7 @@ import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import com.spark.agent.config.MqttProperties;
 import com.spark.agent.service.TelemetryService;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -15,6 +16,8 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 @Slf4j
 @Component
@@ -24,6 +27,7 @@ public class MqttSubscriber implements ApplicationRunner {
     private final TelemetryService telemetryService;
     private final ObjectMapper objectMapper;
     private Mqtt5AsyncClient client;
+    private final Executor mqttExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     public MqttSubscriber(MqttProperties props, TelemetryService telemetryService, ObjectMapper objectMapper) {
         this.props = props;
@@ -49,13 +53,16 @@ public class MqttSubscriber implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         log.info("[MQTT] Connecting to {}:{}", props.getHost(), props.getPort());
-        client.connectWith()
-                .cleanStart(true)
-                .send()
-                .exceptionally(ex -> {
-                    log.error("[MQTT] Initial connection failed", ex);
-                    return null;
-                });
+        try {
+            client.connectWith()
+                    .cleanStart(true)
+                    .send()
+                    .get();
+            log.info("[MQTT] Connected successfully");
+        } catch (Exception e) {
+            log.error("[MQTT] Initial connection failed: {}", e.getMessage());
+            throw new RuntimeException("MQTT initial connection failed, aborting startup", e);
+        }
     }
 
     private void subscribe() {
@@ -68,13 +75,23 @@ public class MqttSubscriber implements ApplicationRunner {
                 .thenAccept(ack -> log.info("[MQTT] Subscribed: {}", ack.getReasonCodes()));
     }
 
-    private void handleMessage(Mqtt5Publish message) {
-        try {
-            String payload = new String(message.getPayloadAsBytes(), StandardCharsets.UTF_8);
-            DeviceTelemetryMessage msg = objectMapper.readValue(payload, DeviceTelemetryMessage.class);
-            telemetryService.process(msg);
-        } catch (Exception e) {
-            log.error("[MQTT] Error processing message from {}: {}", message.getTopic(), e.getMessage());
+    @PreDestroy
+    public void destroy() {
+        if (client != null) {
+            client.disconnect();
+            log.info("[MQTT] Client disconnected");
         }
+    }
+
+    private void handleMessage(Mqtt5Publish message) {
+        mqttExecutor.execute(() -> {
+            try {
+                String payload = new String(message.getPayloadAsBytes(), StandardCharsets.UTF_8);
+                DeviceTelemetryMessage msg = objectMapper.readValue(payload, DeviceTelemetryMessage.class);
+                telemetryService.process(msg);
+            } catch (Exception e) {
+                log.error("[MQTT] Error processing message from {}: {}", message.getTopic(), e.getMessage());
+            }
+        });
     }
 }

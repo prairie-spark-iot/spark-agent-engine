@@ -55,6 +55,14 @@ public class DeviceHeartbeatService implements MessageListener {
             return;
         }
         String deviceKey = expiredKey.substring(prefix.length());
+        // Check if the device has already reconnected (new heartbeat key exists).
+        // Redis expiry notification may arrive after the device already sent a new heartbeat,
+        // so verify the key is still absent before marking offline.
+        String redisKey = prefix + deviceKey;
+        Boolean stillAbsent = redisTemplate.hasKey(redisKey);
+        if (Boolean.TRUE.equals(stillAbsent)) {
+            return;
+        }
         deviceRepository.findByDeviceKeyAndDeleted(deviceKey, (short) 0)
                 .ifPresent(device -> {
                     deviceRepository.markOffline(device.getId(), LocalDateTime.now());
