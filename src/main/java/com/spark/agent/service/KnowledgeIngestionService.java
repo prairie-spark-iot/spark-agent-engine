@@ -1,6 +1,9 @@
 package com.spark.agent.service;
 
 import com.spark.agent.common.SnowflakeIdGenerator;
+import com.spark.agent.dto.KnowledgeImportItem;
+import com.spark.agent.dto.KnowledgeImportResult;
+import com.spark.agent.dto.KnowledgeImportResult.FailedItem;
 import com.spark.agent.entity.Knowledge;
 import com.spark.agent.repository.KnowledgeRepository;
 import com.spark.agent.repository.VectorStoreRepository;
@@ -45,6 +48,25 @@ public class KnowledgeIngestionService {
 
         log.info("[RAG] Ingested '{}' → {} chunk(s)", title, chunks.size());
         return chunks.size();
+    }
+
+    public KnowledgeImportResult importBatch(List<KnowledgeImportItem> items) {
+        int successCount = 0;
+        List<FailedItem> failedItems = new ArrayList<>();
+
+        for (KnowledgeImportItem item : items) {
+            try {
+                float[] embedding = embeddingModel.embed(item.chunkText());
+                vectorStoreRepository.insertKnowledge(idGen.nextId(), item, embedding);
+                successCount++;
+            } catch (Exception e) {
+                log.error("[Knowledge Import] Failed to import '{}': {}", item.title(), e.getMessage(), e);
+                failedItems.add(new FailedItem(item.title(), e.getMessage()));
+            }
+        }
+
+        log.info("[Knowledge Import] {} succeeded, {} failed out of {}", successCount, failedItems.size(), items.size());
+        return new KnowledgeImportResult(successCount, failedItems.size(), failedItems);
     }
 
     private List<String> chunk(String text) {
