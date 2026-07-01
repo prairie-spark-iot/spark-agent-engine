@@ -1,5 +1,6 @@
 package com.spark.agent.repository;
 
+import com.spark.agent.dto.KnowledgeImportItem;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -21,6 +22,16 @@ public class VectorStoreRepository {
     public void saveEmbedding(Long id, float[] embedding) {
         jdbc.update("UPDATE aiot_knowledge SET embedding = ?::vector WHERE id = ?",
                 toVectorString(embedding), id);
+    }
+
+    public void insertKnowledge(Long id, KnowledgeImportItem item, float[] embedding) {
+        jdbc.update("""
+                INSERT INTO aiot_knowledge (id, title, doc_type, product_id, device_model,
+                  chunk_text, embedding, source, creator, tenant_id, deleted, create_time, update_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?::vector, ?, 'system', 1, 0, now(), now())
+                """,
+                id, item.title(), item.docType(), item.productId(), item.deviceModel(),
+                item.chunkText(), toVectorString(embedding), item.source());
     }
 
     public List<SearchResult> search(float[] queryEmbedding, String deviceModel, int topK) {
