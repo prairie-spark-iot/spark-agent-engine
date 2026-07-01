@@ -1,9 +1,11 @@
 package com.spark.agent.mcp;
 
 import com.spark.agent.dto.DeviceStatusResult;
+import com.spark.agent.entity.AlertRecord;
 import com.spark.agent.entity.Device;
 import com.spark.agent.entity.DeviceData;
 import com.spark.agent.entity.Product;
+import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.DeviceDataRepository;
 import com.spark.agent.repository.DeviceRepository;
 import com.spark.agent.repository.ProductRepository;
@@ -20,6 +22,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DeviceMcpToolService {
 
+    private final AlertRecordRepository alertRecordRepository;
     private final DeviceRepository deviceRepository;
     private final ProductRepository productRepository;
     private final DeviceDataRepository deviceDataRepository;
@@ -53,5 +56,14 @@ public class DeviceMcpToolService {
         LocalDateTime since = LocalDateTime.now().minusHours(hours);
         return deviceDataRepository.findByDeviceKeyAndIdentifierAndDeletedAndReportTimeGreaterThanEqualOrderByReportTimeDesc(
                 deviceKey, identifier, (short) 0, since, PageRequest.of(0, 500));
+    }
+
+    @Tool(description = "Query recent alert records for a device, newest first")
+    public List<AlertRecord> queryDeviceAlerts(
+            @ToolParam(description = "the device's unique key, e.g. DK_INJ_001") String deviceKey,
+            @ToolParam(description = "max number of alerts to return; defaults to 20 if omitted or <= 0", required = false) int limit) {
+        int effectiveLimit = limit > 0 ? limit : 20;
+        return alertRecordRepository.findByDeviceKeyAndDeletedOrderByTriggerTimeDesc(
+                deviceKey, (short) 0, PageRequest.of(0, effectiveLimit));
     }
 }
