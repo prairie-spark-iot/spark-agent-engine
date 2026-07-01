@@ -9,6 +9,8 @@ import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.DeviceDataRepository;
 import com.spark.agent.repository.DeviceRepository;
 import com.spark.agent.repository.ProductRepository;
+import com.spark.agent.repository.VectorStoreRepository;
+import com.spark.agent.service.RagSearchService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -26,6 +28,7 @@ public class DeviceMcpToolService {
     private final DeviceRepository deviceRepository;
     private final ProductRepository productRepository;
     private final DeviceDataRepository deviceDataRepository;
+    private final RagSearchService ragSearchService;
 
     @Tool(description = "Query a device's online status and latest telemetry value per identifier, by device key")
     public DeviceStatusResult queryDeviceStatus(
@@ -65,5 +68,12 @@ public class DeviceMcpToolService {
         int effectiveLimit = limit > 0 ? limit : 20;
         return alertRecordRepository.findByDeviceKeyAndDeletedOrderByTriggerTimeDesc(
                 deviceKey, (short) 0, PageRequest.of(0, effectiveLimit));
+    }
+
+    @Tool(description = "Search the device manual/knowledge base for a device model and return relevant excerpts")
+    public List<VectorStoreRepository.SearchResult> queryDeviceManual(
+            @ToolParam(description = "the device's product model/key, e.g. PK_INJECTION_MA — this is the product_key, not the device's display name; get it from queryDeviceStatus if unknown") String deviceModel,
+            @ToolParam(description = "the question or symptom to search the manual for") String question) {
+        return ragSearchService.search(question, deviceModel, 5);
     }
 }
