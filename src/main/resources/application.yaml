@@ -42,8 +42,8 @@ spring:
       host: localhost
       port: 6379
       timeout: 2000ms   # connection + command timeout
-      # Docker dev instance has no --requirepass; uncomment and set for production
-      # password: redis123456
+      # Docker dev instance has --requirepass "redis123456";
+      password: redis123456
 
   # ── Kafka ────────────────────────────────────────────────────────────────
   kafka:
