@@ -5,9 +5,11 @@ import com.spark.agent.dto.DiagnosisResult;
 import com.spark.agent.entity.AlertRecord;
 import com.spark.agent.entity.Device;
 import com.spark.agent.entity.DeviceData;
+import com.spark.agent.entity.Product;
 import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.DeviceDataRepository;
 import com.spark.agent.repository.DeviceRepository;
+import com.spark.agent.repository.ProductRepository;
 import com.spark.agent.repository.VectorStoreRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityNotFoundException;
@@ -45,6 +47,7 @@ public class DiagnosisAgentService {
     private static final short STATUS_DIAGNOSED = 2;
 
     private final DeviceRepository deviceRepository;
+    private final ProductRepository productRepository;
     private final DeviceDataRepository deviceDataRepository;
     private final AlertRecordRepository alertRecordRepository;
     private final RagSearchService ragSearchService;
@@ -78,9 +81,11 @@ public class DiagnosisAgentService {
 
         Device device = deviceRepository.findByDeviceKeyAndDeleted(alert.getDeviceKey(), (short) 0)
                 .orElse(null);
-        // Device has no explicit "model" field; deviceName is the closest descriptive
-        // string and is what knowledge docs are tagged with at ingestion time.
-        String deviceModel = device != null ? device.getDeviceName() : null;
+        // Knowledge docs are tagged at ingestion time with the product's product_key
+        // (e.g. "PK_INJECTION_MA", matching MQTT's productKey), not the device's own name.
+        String deviceModel = device != null
+                ? productRepository.findById(device.getProductId()).map(Product::getProductKey).orElse(null)
+                : null;
 
         List<AlertRecord> pastAlerts = alertRecordRepository
                 .findTop5ByDeviceKeyAndDeletedOrderByTriggerTimeDesc(alert.getDeviceKey(), (short) 0);
