@@ -94,6 +94,8 @@ ApiController  GET endpoints → DeviceDataRepository / AlertRecordRepository
 
 **`tenant_id` default** — `BaseEntity` defaults `tenantId = 1L` (matches existing data in the DB; the DB column default is 0 but all inserted rows use 1).
 
+**`aiot_device_data` composite index** — `findLatestByDeviceKey` and `findByDeviceKeyAndIdentifierAndDeletedAndReportTimeGreaterThanEqualOrderByReportTimeDesc` (used by the `queryDeviceStatus`/`queryDeviceHistory` MCP tools and the `/api/device/{deviceKey}/latest` REST endpoint) depend on `idx_device_data_key_identifier_time` on `(device_key, identifier, report_time DESC) WHERE deleted = 0` — see `sql/2026-07-01-device-data-index.sql`. Since `ddl-auto: none`, this index is not created automatically; apply it manually to any new environment.
+
 ## Entity / DB Field Mapping Reference
 
 Hibernate naming: Java camelCase → SQL snake_case (Spring default). No explicit `@Column(name)` needed unless field name diverges from this pattern.

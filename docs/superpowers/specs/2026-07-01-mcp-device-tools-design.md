@@ -100,7 +100,7 @@ DeviceMcpToolService.<tool>(...)
 - No control/action tools (e.g. acknowledge alert, restart device) — read-only only, per requirement.
 - No changes to existing REST controllers (`ApiController`, `RagController`) — they remain the REST entry points; the MCP tools are additive.
 - No changes to `DiagnosisAgentService` — its tool-calling rewrite is 4.3.2, a separate design.
-- No auth/access-control on the MCP endpoint — matches the current REST API's lack of auth; out of scope for this phase.
+- No auth/access-control on the MCP endpoint — matches the current REST API's lack of auth; out of scope for this phase. **Deployment prerequisite:** this means device telemetry and alert data (including internal fields like `creator`/`tenantId` on the raw entities returned) are reachable by anyone who can reach `:8080`, same as the REST API today. If this app is ever exposed off-host to genuinely external AI agents (per the phase 4 goal), a reverse-proxy auth layer or network perimeter control must be in place first — this was an accepted, conscious tradeoff for this phase, not an oversight.
 
 ## Testing
 
