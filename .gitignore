@@ -60,5 +60,8 @@ Thumbs.db
 *.tmp
 *.bak
 
+# ========== OpenCode session continuation state ==========
+.omo/
+
 # ========== superpowers scratch state ==========
 .superpowers/
