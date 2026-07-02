@@ -1,28 +1,45 @@
 # syntax=docker/dockerfile:1
-# Generic Java JRE runtime image — copy your pre-built JAR as app.jar before build.
 
 FROM eclipse-temurin:25-jre
 
-RUN groupadd --system --gid 1000 appuser && \
-    useradd --system --gid appuser --uid 1000 \
-        --shell /sbin/nologin --no-create-home --home-dir /app appuser
+RUN groupadd --system --gid 1000 app && \
+    useradd --system \
+    --gid app \
+    --uid 1000 \
+    --shell /sbin/nologin \
+    --no-create-home \
+    --home-dir /app app
 
 WORKDIR /app
-COPY *.jar app.jar
-RUN chown appuser:appuser app.jar
 
-USER appuser
+ARG JAR_FILE=target/*.jar
+COPY ${JAR_FILE} app.jar
+
+RUN chown app:app /app/app.jar
+
+USER app
+
 EXPOSE 8080
 
-# ── JDK 25 defaults (override via docker-compose environment if needed) ──
-ENV JAVA_TOOL_OPTIONS="\
-    -Xms2g -Xmx2g \
-    -XX:+UseZGC \
-    -XX:+AlwaysPreTouch \
-    -XX:+UseCompactObjectHeaders \
-    -XX:+HeapDumpOnOutOfMemoryError \
-    -XX:HeapDumpPath=/tmp/heapdump.hprof \
-    "
 ENV TZ=Asia/Shanghai
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENV JAVA_TOOL_OPTIONS="\
+-XX:+UseZGC \
+-XX:+ZGenerational \
+-XX:InitialRAMPercentage=20 \
+-XX:MaxRAMPercentage=70 \
+-XX:+AlwaysPreTouch \
+-XX:+UseCompactObjectHeaders \
+-XX:+HeapDumpOnOutOfMemoryError \
+-XX:HeapDumpPath=/tmp/heapdump.hprof \
+-XX:+ExitOnOutOfMemoryError \
+-Dfile.encoding=UTF-8 \
+-Djava.security.egd=file:/dev/urandom \
+-Dsun.net.inetaddr.ttl=60 \
+-Dsun.net.inetaddr.negative.ttl=10 \
+"
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+CMD wget -qO- http://localhost:8080/actuator/health || exit 1
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

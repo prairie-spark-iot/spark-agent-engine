@@ -35,7 +35,7 @@ docs/
 
 # Docker self-reference
 docker-compose.yml
-.env
+.env.dev
 
 # System files
 .DS_Store
