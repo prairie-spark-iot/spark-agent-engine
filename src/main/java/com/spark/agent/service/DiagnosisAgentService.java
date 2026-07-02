@@ -3,47 +3,46 @@ package com.spark.agent.service;
 import com.spark.agent.config.AppProperties;
 import com.spark.agent.dto.DiagnosisResult;
 import com.spark.agent.entity.AlertRecord;
-import com.spark.agent.entity.Device;
-import com.spark.agent.entity.DeviceData;
-import com.spark.agent.entity.Product;
 import com.spark.agent.repository.AlertRecordRepository;
-import com.spark.agent.repository.DeviceDataRepository;
-import com.spark.agent.repository.DeviceRepository;
-import com.spark.agent.repository.ProductRepository;
-import com.spark.agent.repository.VectorStoreRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DiagnosisAgentService {
 
+    private static final String SYSTEM_PROMPT = """
+            You are an expert industrial IoT diagnosis assistant for factory equipment.
+            You have tools available to investigate an alert: queryDeviceStatus (device info
+            and latest telemetry), queryDeviceHistory (historical telemetry for one
+            identifier), queryDeviceAlerts (past alerts for the device), and queryDeviceManual
+            (search equipment manuals by device model and question/symptom).
+            Use these tools as needed to gather the context you need — call queryDeviceStatus
+            first if you need the device's product model to search its manual. Then determine
+            the most likely root cause and a concrete, actionable remediation. Be specific and
+            concise.
+            """;
+
     /** diagnosis_status values written back to aiot_alert_record */
     private static final short STATUS_HUMAN_REVIEW_REQUIRED = 1;
     private static final short STATUS_DIAGNOSED = 2;
 
-    private final DeviceRepository deviceRepository;
-    private final ProductRepository productRepository;
-    private final DeviceDataRepository deviceDataRepository;
     private final AlertRecordRepository alertRecordRepository;
-    private final RagSearchService ragSearchService;
     private final ChatClient.Builder chatClientBuilder;
+    private final ToolCallbackProvider deviceToolCallbacks;
     private final AppProperties appProperties;
-    private final DiagnosisPromptBuilder promptBuilder;
 
     private ChatClient chatClient;
 
@@ -53,12 +52,12 @@ public class DiagnosisAgentService {
     }
 
     /**
-     * Run AI diagnosis for the given alert. Fetches the managed entity from DB,
-     * gathers context (device, product, telemetry, past alerts, RAG manuals),
-     * invokes the LLM, optionally retries with reflection, and writes back the result.
+     * Run AI diagnosis for the given alert. The LLM decides for itself which device
+     * tools (if any) to call before producing a final diagnosis, then the result is
+     * written back to the alert record.
      *
      * @param alertId the {@code aiot_alert_record.id} to diagnose
-     * @return the diagnosis result, or null if the alert record no longer exists
+     * @return the diagnosis result
      */
     @Transactional
     public DiagnosisResult diagnose(Long alertId) {
@@ -66,84 +65,31 @@ public class DiagnosisAgentService {
                 .orElseThrow(() -> new EntityNotFoundException(
                         "AlertRecord " + alertId + " not found for diagnosis"));
 
-        Device device = deviceRepository.findByDeviceKeyAndDeleted(alert.getDeviceKey(), (short) 0)
-                .orElse(null);
+        String userPrompt = """
+                ## Alert
+                Device: %s
+                Identifier: %s
+                Trigger value: %s
+                Level: %d
+                Content: %s
+                Trigger time: %s
 
-        String deviceModel = resolveDeviceModel(device);
+                Investigate this alert using the available tools as needed, then give your diagnosis.
+                """.formatted(alert.getDeviceKey(), alert.getIdentifier(), alert.getTriggerValue(),
+                        alert.getLevel(), alert.getAlertContent(), alert.getTriggerTime());
 
-        String alertHistory = formatAlertHistory(alert.getDeviceKey());
-
-        List<VectorStoreRepository.SearchResult> manuals =
-                ragSearchService.search(alert.getAlertContent(), deviceModel, 3);
-        String manualExcerpts = promptBuilder.formatManuals(manuals);
-
-        List<DeviceData> latestTelemetry = deviceDataRepository.findLatestByDeviceKey(alert.getDeviceKey());
-        String telemetryTrend = promptBuilder.formatTelemetry(latestTelemetry, "latest per identifier");
-
-        String initialPrompt = promptBuilder.buildUserPrompt(alert, device, telemetryTrend, alertHistory, manualExcerpts, false);
-        DiagnosisResult result = runInference(initialPrompt);
-
-        if (needsReflection(result, manuals)) {
-            result = runReflection(alert, device, alertHistory, manualExcerpts, result);
-        }
+        DiagnosisResult result = runInference(userPrompt);
 
         writeBack(alert, result);
         return result;
-    }
-
-    private String resolveDeviceModel(Device device) {
-        if (device == null) return null;
-        return productRepository.findById(device.getProductId())
-                .map(Product::getProductKey)
-                .orElse(null);
-    }
-
-    private String formatAlertHistory(String deviceKey) {
-        List<AlertRecord> pastAlerts = alertRecordRepository
-                .findTop5ByDeviceKeyAndDeletedOrderByTriggerTimeDesc(deviceKey, (short) 0);
-        return pastAlerts.stream()
-                .map(a -> "[%s] %s (level=%d) @ %s".formatted(
-                        a.getIdentifier(), a.getAlertContent(), a.getLevel(), a.getTriggerTime()))
-                .collect(Collectors.joining("\n"));
-    }
-
-    private DiagnosisResult runReflection(AlertRecord alert, Device device,
-                                           String alertHistory, String manualExcerpts,
-                                           DiagnosisResult initialResult) {
-        log.warn("[Diagnosis][Reflection] alert={} device={} confidence={} manualsFound={} — " +
-                        "retrying once with a widened telemetry window and a deeper-analysis prompt",
-                alert.getId(), alert.getDeviceKey(), initialResult.confidence(),
-                manualExcerpts.isEmpty() || "none found".equals(manualExcerpts) ? 0 : 1);
-
-        LocalDateTime since = LocalDateTime.now()
-                .minusMinutes(appProperties.getDiagnosisReflectionTelemetryWindowMinutes());
-        List<DeviceData> widenedTelemetry = deviceDataRepository
-                .findByDeviceKeyAndDeletedAndReportTimeGreaterThanEqualOrderByReportTimeDesc(
-                        alert.getDeviceKey(), (short) 0, since, PageRequest.of(0, 100));
-        String widenedTrend = promptBuilder.formatTelemetry(widenedTelemetry,
-                "last %d minutes".formatted(appProperties.getDiagnosisReflectionTelemetryWindowMinutes()));
-
-        String reflectionPrompt = promptBuilder.buildUserPrompt(
-                alert, device, widenedTrend, alertHistory, manualExcerpts, true);
-        DiagnosisResult reflected = runInference(reflectionPrompt);
-
-        return new DiagnosisResult(
-                reflected.rootCause(), reflected.suggestion(), reflected.confidence(),
-                """
-                === Initial Analysis (confidence=%d) ===
-                %s
-
-                === Reflection Retry (confidence=%d) ===
-                %s
-                """.formatted(initialResult.confidence(), initialResult.diagnosisDetail(),
-                        reflected.confidence(), reflected.diagnosisDetail()));
     }
 
     private DiagnosisResult runInference(String userPrompt) {
         try {
             return CompletableFuture.supplyAsync(() ->
                     chatClient.prompt()
-                            .system(promptBuilder.getSystemPrompt())
+                            .system(SYSTEM_PROMPT)
+                            .tools(deviceToolCallbacks)
                             .user(userPrompt)
                             .call()
                             .entity(DiagnosisResult.class)
@@ -152,12 +98,6 @@ public class DiagnosisAgentService {
             log.error("[Diagnosis] LLM inference failed or timed out: {}", e.getMessage());
             return new DiagnosisResult("", "", 0, "Inference failed: " + e.getMessage());
         }
-    }
-
-    private boolean needsReflection(DiagnosisResult result,
-                                     List<VectorStoreRepository.SearchResult> manuals) {
-        return result.confidence() < appProperties.getDiagnosisReflectionConfidenceThreshold()
-                || manuals.isEmpty();
     }
 
     private void writeBack(AlertRecord record, DiagnosisResult result) {
