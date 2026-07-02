@@ -65,6 +65,9 @@ Thumbs.db
 
 # ========== superpowers scratch state ==========
 .superpowers/
+
+# ========== git worktrees ==========
+.worktrees/
 # OpenCode / JDT LS
 .classpath
 .project
