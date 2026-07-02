@@ -6,8 +6,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
+
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Service
@@ -29,6 +32,10 @@ public class KafkaProducerService {
 
     public void sendAlert(AlertRecord record) {
         send(alertTopic, record.getDeviceKey(), record);
+    }
+
+    public CompletableFuture<SendResult<Object, Object>> sendRaw(String topic, String key, String jsonPayload) {
+        return kafkaTemplate.send(topic, key, jsonPayload);
     }
 
     private void send(String topic, String key, Object payload) {
