@@ -87,14 +87,15 @@ class AlertServiceTest {
         when(alertRecordRepository.countRecentUnhandled(eq(1L), eq(100L), any(LocalDateTime.class)))
                 .thenReturn(0L);
         when(idGenerator.nextId()).thenReturn(999L);
-        when(outboxMessageFactory.build(eq("alert_record"), any(), eq("alert.triggered"), any(AlertRecord.class)))
-                .thenReturn(new OutboxMessage());
+        OutboxMessage outboxMessage = new OutboxMessage();
+        when(outboxMessageFactory.build(eq("alert_record"), eq("999"), eq("alert.triggered"), any(AlertRecord.class)))
+                .thenReturn(outboxMessage);
 
         alertService.evaluate(sampleData);
 
         verify(alertRecordRepository).save(any(AlertRecord.class));
-        verify(outboxMessageFactory).build(eq("alert_record"), any(), eq("alert.triggered"), any(AlertRecord.class));
-        verify(outboxMessageRepository).save(any(OutboxMessage.class));
+        verify(outboxMessageFactory).build(eq("alert_record"), eq("999"), eq("alert.triggered"), any(AlertRecord.class));
+        verify(outboxMessageRepository).save(same(outboxMessage));
     }
 
     @Test
@@ -196,12 +197,13 @@ class AlertServiceTest {
         when(alertRecordRepository.countRecentUnhandled(eq(1L), eq(100L), any(LocalDateTime.class)))
                 .thenReturn(0L);
         when(idGenerator.nextId()).thenReturn(999L);
-        when(outboxMessageFactory.build(eq("alert_record"), any(), eq("alert.triggered"), any(AlertRecord.class)))
-                .thenReturn(new OutboxMessage());
+        OutboxMessage outboxMessage = new OutboxMessage();
+        when(outboxMessageFactory.build(eq("alert_record"), eq("999"), eq("alert.triggered"), any(AlertRecord.class)))
+                .thenReturn(outboxMessage);
 
         alertService.evaluate(sampleData);
 
         verify(alertRecordRepository).save(any(AlertRecord.class));
-        verify(outboxMessageRepository).save(any(OutboxMessage.class));
+        verify(outboxMessageRepository).save(same(outboxMessage));
     }
 }
