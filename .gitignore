@@ -73,3 +73,5 @@ Thumbs.db
 .project
 .settings/
 .factorypath
+/.opencode/
+/.claude/

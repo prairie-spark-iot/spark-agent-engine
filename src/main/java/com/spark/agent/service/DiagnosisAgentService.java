@@ -35,6 +35,20 @@ public class DiagnosisAgentService {
             concise.
             """;
 
+    /**
+     * Structured output is requested in a separate, tool-free follow-up call rather than
+     * on the tool-calling call itself: small local models reliably drift into free-form
+     * prose once tool results are in context, which breaks JSON parsing of the entity()
+     * response. Asking a plain formatting question against the finished investigation is
+     * a much easier task and parses far more reliably.
+     */
+    private static final String STRUCTURE_SYSTEM_PROMPT = """
+            Extract the diagnosis below into the required structured fields: rootCause (concise
+            root cause), suggestion (concrete, actionable remediation), confidence (integer 0-100
+            reflecting how certain the diagnosis is), diagnosisDetail (the full diagnosis
+            narrative). Do not invent information beyond what's in the diagnosis.
+            """;
+
     /** diagnosis_status values written back to aiot_alert_record */
     private static final short STATUS_HUMAN_REVIEW_REQUIRED = 1;
     private static final short STATUS_DIAGNOSED = 2;
@@ -86,14 +100,19 @@ public class DiagnosisAgentService {
 
     private DiagnosisResult runInference(String userPrompt) {
         try {
-            return CompletableFuture.supplyAsync(() ->
-                    chatClient.prompt()
-                            .system(SYSTEM_PROMPT)
-                            .tools(deviceToolCallbacks)
-                            .user(userPrompt)
-                            .call()
-                            .entity(DiagnosisResult.class)
-            ).orTimeout(60, TimeUnit.SECONDS).join();
+            return CompletableFuture.supplyAsync(() -> {
+                String investigation = chatClient.prompt()
+                        .system(SYSTEM_PROMPT)
+                        .tools(deviceToolCallbacks)
+                        .user(userPrompt)
+                        .call()
+                        .content();
+                return chatClient.prompt()
+                        .system(STRUCTURE_SYSTEM_PROMPT)
+                        .user(investigation)
+                        .call()
+                        .entity(DiagnosisResult.class);
+            }).orTimeout(150, TimeUnit.SECONDS).join();
         } catch (Exception e) {
             log.error("[Diagnosis] LLM inference failed or timed out: {}", e.getMessage());
             return new DiagnosisResult("", "", 0, "Inference failed: " + e.getMessage());
