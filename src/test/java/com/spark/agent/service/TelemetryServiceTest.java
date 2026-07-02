@@ -67,7 +67,7 @@ class TelemetryServiceTest {
 
         telemetryService.process(sampleMsg);
 
-        verifyNoInteractions(deviceDataRepository, outboxMessageRepository, alertService, heartbeatService);
+        verifyNoInteractions(deviceDataRepository, outboxMessageRepository, outboxMessageFactory, alertService, heartbeatService);
     }
 
     @Test
@@ -88,8 +88,10 @@ class TelemetryServiceTest {
         verify(outboxMessageRepository).saveAll(outboxCaptor.capture());
         assertEquals(2, outboxCaptor.getValue().size());
 
-        verify(outboxMessageFactory, times(2))
-                .build(eq("device_data"), any(), eq("device.data"), any(DeviceData.class));
+        verify(outboxMessageFactory, times(1))
+                .build(eq("device_data"), eq("1001"), eq("device.data"), any(DeviceData.class));
+        verify(outboxMessageFactory, times(1))
+                .build(eq("device_data"), eq("1002"), eq("device.data"), any(DeviceData.class));
     }
 
     @Test
