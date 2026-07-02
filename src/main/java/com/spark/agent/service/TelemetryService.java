@@ -3,10 +3,11 @@ package com.spark.agent.service;
 import com.spark.agent.common.SnowflakeIdGenerator;
 import com.spark.agent.entity.Device;
 import com.spark.agent.entity.DeviceData;
-import com.spark.agent.kafka.KafkaProducerService;
+import com.spark.agent.entity.OutboxMessage;
 import com.spark.agent.mqtt.DeviceTelemetryMessage;
 import com.spark.agent.repository.DeviceDataRepository;
 import com.spark.agent.repository.DeviceRepository;
+import com.spark.agent.repository.OutboxMessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,7 +30,8 @@ public class TelemetryService {
     private final DeviceRepository deviceRepository;
     private final DeviceDataRepository deviceDataRepository;
     private final AlertService alertService;
-    private final KafkaProducerService kafkaProducerService;
+    private final OutboxMessageRepository outboxMessageRepository;
+    private final OutboxMessageFactory outboxMessageFactory;
     private final SnowflakeIdGenerator idGenerator;
     private final DeviceHeartbeatService heartbeatService;
 
@@ -49,10 +51,12 @@ public class TelemetryService {
         deviceDataRepository.saveAll(rows);
         deviceDataRepository.flush();
 
+        List<OutboxMessage> outboxRows = new ArrayList<>();
         for (DeviceData row : rows) {
-            kafkaProducerService.sendTelemetry(row);
+            outboxRows.add(outboxMessageFactory.build("device_data", String.valueOf(row.getId()), "device.data", row));
             alertService.evaluate(row);
         }
+        outboxMessageRepository.saveAll(outboxRows);
 
         log.debug("[Telemetry] Processed {} properties for {}", rows.size(), msg.getDeviceKey());
     }
