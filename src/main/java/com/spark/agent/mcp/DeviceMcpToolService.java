@@ -1,5 +1,6 @@
 package com.spark.agent.mcp;
 
+import com.spark.agent.dto.DeviceSummary;
 import com.spark.agent.dto.DeviceStatusResult;
 import com.spark.agent.entity.AlertRecord;
 import com.spark.agent.entity.Device;
@@ -31,6 +32,20 @@ public class DeviceMcpToolService {
     private final ProductRepository productRepository;
     private final DeviceDataRepository deviceDataRepository;
     private final RagSearchService ragSearchService;
+
+    @Tool(description = "List all devices with their key, display name, product model, and online " +
+            "status — call this first when the question refers to a device by name or description " +
+            "rather than its exact deviceKey")
+    public List<DeviceSummary> listDevices() {
+        log.debug("[MCP Tool] listDevices");
+        return deviceRepository.findByDeleted((short) 0).stream()
+                .map(d -> new DeviceSummary(
+                        d.getDeviceKey(),
+                        d.getDeviceName(),
+                        productRepository.findById(d.getProductId()).map(Product::getProductKey).orElse(null),
+                        d.getOnlineStatus() == 1))
+                .toList();
+    }
 
     @Tool(description = "Query a device's online status and latest telemetry value per identifier, by device key")
     public DeviceStatusResult queryDeviceStatus(
