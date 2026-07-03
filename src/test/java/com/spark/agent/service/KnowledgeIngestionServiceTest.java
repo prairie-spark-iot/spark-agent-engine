@@ -3,9 +3,8 @@ package com.spark.agent.service;
 import com.spark.agent.common.SnowflakeIdGenerator;
 import com.spark.agent.dto.KnowledgeImportItem;
 import com.spark.agent.dto.KnowledgeImportResult;
-import com.spark.agent.entity.Knowledge;
-import com.spark.agent.repository.KnowledgeRepository;
 import com.spark.agent.repository.VectorStoreRepository;
+import com.spark.agent.repository.VectorStoreRepository.KnowledgeBatchRow;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,8 +25,6 @@ class KnowledgeIngestionServiceTest {
     @Mock
     private EmbeddingModel embeddingModel;
     @Mock
-    private KnowledgeRepository knowledgeRepository;
-    @Mock
     private VectorStoreRepository vectorStoreRepository;
     @Mock
     private SnowflakeIdGenerator idGen;
@@ -36,8 +33,7 @@ class KnowledgeIngestionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new KnowledgeIngestionService(embeddingModel, knowledgeRepository,
-                vectorStoreRepository, idGen);
+        service = new KnowledgeIngestionService(embeddingModel, vectorStoreRepository, idGen);
     }
 
     // ---- chunk() tests via ingest ----
@@ -51,8 +47,10 @@ class KnowledgeIngestionServiceTest {
         int chunks = service.ingest("test", text, (short) 1, "model1", 1L, "source1");
 
         assertEquals(1, chunks);
-        verify(knowledgeRepository).save(any(Knowledge.class));
-        verify(vectorStoreRepository).saveEmbedding(eq(1L), any(float[].class));
+        ArgumentCaptor<List<KnowledgeBatchRow>> rowsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(vectorStoreRepository).insertKnowledgeBatch(rowsCaptor.capture());
+        assertEquals(1, rowsCaptor.getValue().size());
+        assertEquals(1L, rowsCaptor.getValue().get(0).id());
     }
 
     @Test
@@ -65,7 +63,7 @@ class KnowledgeIngestionServiceTest {
         int chunks = service.ingest("test", text, (short) 1, null, null, "test");
 
         assertEquals(1, chunks);
-        verify(vectorStoreRepository).saveEmbedding(anyLong(), any(float[].class));
+        verify(vectorStoreRepository).insertKnowledgeBatch(argThat(rows -> rows.size() == 1));
     }
 
     @Test
@@ -99,7 +97,6 @@ class KnowledgeIngestionServiceTest {
         assertThrows(RuntimeException.class,
                 () -> service.ingest("test", text, (short) 1, null, null, "test"));
 
-        verifyNoInteractions(knowledgeRepository);
         verifyNoInteractions(vectorStoreRepository);
     }
 
@@ -162,19 +159,21 @@ class KnowledgeIngestionServiceTest {
     // ---- saveChunks transactional boundary test ----
 
     @Test
-    void saveChunks_savesKnowledgeAndEmbeddingInOrder() {
+    void saveChunks_issuesSingleBatchInsertForAllChunks() {
         when(idGen.nextId()).thenReturn(1L, 2L);
 
         service.saveChunks("title", (short) 1, "model1", 1L, "src1",
                 List.of("chunk1", "chunk2"),
                 List.of(new float[]{0.1f}, new float[]{0.2f}));
 
-        ArgumentCaptor<Knowledge> knowledgeCaptor = ArgumentCaptor.forClass(Knowledge.class);
-        verify(knowledgeRepository, times(2)).save(knowledgeCaptor.capture());
-        assertEquals("chunk1", knowledgeCaptor.getAllValues().get(0).getChunkText());
-        assertEquals("chunk2", knowledgeCaptor.getAllValues().get(1).getChunkText());
+        ArgumentCaptor<List<KnowledgeBatchRow>> rowsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(vectorStoreRepository, times(1)).insertKnowledgeBatch(rowsCaptor.capture());
 
-        verify(vectorStoreRepository).saveEmbedding(1L, new float[]{0.1f});
-        verify(vectorStoreRepository).saveEmbedding(2L, new float[]{0.2f});
+        List<KnowledgeBatchRow> rows = rowsCaptor.getValue();
+        assertEquals(2, rows.size());
+        assertEquals(1L, rows.get(0).id());
+        assertEquals("chunk1", rows.get(0).chunkText());
+        assertEquals(2L, rows.get(1).id());
+        assertEquals("chunk2", rows.get(1).chunkText());
     }
 }

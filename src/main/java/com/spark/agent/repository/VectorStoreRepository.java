@@ -18,6 +18,29 @@ public class VectorStoreRepository {
     public record SearchResult(Long id, String title, String chunkText, Short docType,
                                String deviceModel, String source, double distance) {}
 
+    public record KnowledgeBatchRow(Long id, String title, Short docType, Long productId,
+                                    String deviceModel, String source, String chunkText, float[] embedding) {}
+
+    @Transactional
+    public void insertKnowledgeBatch(List<KnowledgeBatchRow> rows) {
+        if (rows.isEmpty()) return;
+        String sql = """
+                INSERT INTO aiot_knowledge (id, title, doc_type, product_id, device_model,
+                  chunk_text, embedding, source, creator, tenant_id, deleted, create_time, update_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?::vector, ?, 'system', 1, 0, now(), now())
+                """;
+        jdbc.batchUpdate(sql, rows, rows.size(), (ps, row) -> {
+            ps.setLong(1, row.id());
+            ps.setString(2, row.title());
+            ps.setObject(3, row.docType());
+            ps.setObject(4, row.productId());
+            ps.setString(5, row.deviceModel());
+            ps.setString(6, row.chunkText());
+            ps.setString(7, toVectorString(row.embedding()));
+            ps.setString(8, row.source());
+        });
+    }
+
     @Transactional
     public void saveEmbedding(Long id, float[] embedding) {
         jdbc.update("""

@@ -4,9 +4,8 @@ import com.spark.agent.common.SnowflakeIdGenerator;
 import com.spark.agent.dto.KnowledgeImportItem;
 import com.spark.agent.dto.KnowledgeImportResult;
 import com.spark.agent.dto.KnowledgeImportResult.FailedItem;
-import com.spark.agent.entity.Knowledge;
-import com.spark.agent.repository.KnowledgeRepository;
 import com.spark.agent.repository.VectorStoreRepository;
+import com.spark.agent.repository.VectorStoreRepository.KnowledgeBatchRow;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -22,7 +21,6 @@ import java.util.List;
 public class KnowledgeIngestionService {
 
     private final EmbeddingModel embeddingModel;
-    private final KnowledgeRepository knowledgeRepository;
     private final VectorStoreRepository vectorStoreRepository;
     private final SnowflakeIdGenerator idGen;
 
@@ -44,18 +42,12 @@ public class KnowledgeIngestionService {
     @Transactional
     protected void saveChunks(String title, Short docType, String deviceModel, Long productId,
                               String source, List<String> chunks, List<float[]> embeddings) {
+        List<KnowledgeBatchRow> rows = new ArrayList<>();
         for (int i = 0; i < chunks.size(); i++) {
-            Knowledge k = new Knowledge();
-            k.setId(idGen.nextId());
-            k.setTitle(title);
-            k.setChunkText(chunks.get(i));
-            k.setDocType(docType);
-            k.setDeviceModel(deviceModel);
-            k.setProductId(productId);
-            k.setSource(source);
-            knowledgeRepository.save(k);
-            vectorStoreRepository.saveEmbedding(k.getId(), embeddings.get(i));
+            rows.add(new KnowledgeBatchRow(idGen.nextId(), title, docType, productId,
+                    deviceModel, source, chunks.get(i), embeddings.get(i)));
         }
+        vectorStoreRepository.insertKnowledgeBatch(rows);
     }
 
     public KnowledgeImportResult importBatch(List<KnowledgeImportItem> items) {
