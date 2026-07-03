@@ -14,4 +14,7 @@ public class AppProperties {
 
     /** confidence (0-100) at/above which a diagnosis is accepted without human review */
     private int diagnosisConfidenceThreshold = 80;
+
+    private int outboxRelayIntervalMs = 2000;
+    private int outboxRelayBatchSize = 100;
 }

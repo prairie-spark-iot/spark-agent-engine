@@ -5,12 +5,14 @@ import com.spark.agent.config.AppProperties;
 import com.spark.agent.entity.AlertRecord;
 import com.spark.agent.entity.AlertRule;
 import com.spark.agent.entity.DeviceData;
-import com.spark.agent.kafka.KafkaProducerService;
+import com.spark.agent.entity.OutboxMessage;
 import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.AlertRuleRepository;
+import com.spark.agent.repository.OutboxMessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -64,10 +66,12 @@ public class AlertService {
 
     private final AlertRuleRepository alertRuleRepository;
     private final AlertRecordRepository alertRecordRepository;
-    private final KafkaProducerService kafkaProducerService;
+    private final OutboxMessageRepository outboxMessageRepository;
+    private final OutboxMessageFactory outboxMessageFactory;
     private final SnowflakeIdGenerator idGenerator;
     private final AppProperties appProperties;
 
+    @Transactional
     public void evaluate(DeviceData data) {
         if (data.getValueNum() == null) return;
 
@@ -82,7 +86,8 @@ public class AlertService {
 
                 AlertRecord record = buildRecord(data, rule, value);
                 alertRecordRepository.save(record);
-                kafkaProducerService.sendAlert(record);
+                outboxMessageRepository.save(
+                        outboxMessageFactory.build("alert_record", String.valueOf(record.getId()), "alert.triggered", record));
                 log.info("[Alert] Rule '{}' triggered for {} {}: {}", rule.getName(), data.getDeviceKey(), data.getIdentifier(), value);
             }
         }

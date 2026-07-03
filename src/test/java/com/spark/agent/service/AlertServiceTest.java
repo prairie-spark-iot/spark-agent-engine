@@ -5,9 +5,10 @@ import com.spark.agent.config.AppProperties;
 import com.spark.agent.entity.AlertRecord;
 import com.spark.agent.entity.AlertRule;
 import com.spark.agent.entity.DeviceData;
-import com.spark.agent.kafka.KafkaProducerService;
+import com.spark.agent.entity.OutboxMessage;
 import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.AlertRuleRepository;
+import com.spark.agent.repository.OutboxMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,7 +31,9 @@ class AlertServiceTest {
     @Mock
     private AlertRecordRepository alertRecordRepository;
     @Mock
-    private KafkaProducerService kafkaProducerService;
+    private OutboxMessageRepository outboxMessageRepository;
+    @Mock
+    private OutboxMessageFactory outboxMessageFactory;
     @Mock
     private SnowflakeIdGenerator idGenerator;
 
@@ -45,7 +48,7 @@ class AlertServiceTest {
         appProperties = new AppProperties();
         appProperties.setAlertDebounceMinutes(5);
         alertService = new AlertService(alertRuleRepository, alertRecordRepository,
-                kafkaProducerService, idGenerator, appProperties);
+                outboxMessageRepository, outboxMessageFactory, idGenerator, appProperties);
 
         sampleData = new DeviceData();
         sampleData.setDeviceId(1L);
@@ -79,16 +82,20 @@ class AlertServiceTest {
     }
 
     @Test
-    void evaluate_matchingRule_createsAlert() {
+    void evaluate_matchingRule_createsAlertAndOutboxRow() {
         when(alertRuleRepository.findActiveRules(1L, "temperature")).thenReturn(List.of(sampleRule));
         when(alertRecordRepository.countRecentUnhandled(eq(1L), eq(100L), any(LocalDateTime.class)))
                 .thenReturn(0L);
         when(idGenerator.nextId()).thenReturn(999L);
+        OutboxMessage outboxMessage = new OutboxMessage();
+        when(outboxMessageFactory.build(eq("alert_record"), eq("999"), eq("alert.triggered"), any(AlertRecord.class)))
+                .thenReturn(outboxMessage);
 
         alertService.evaluate(sampleData);
 
         verify(alertRecordRepository).save(any(AlertRecord.class));
-        verify(kafkaProducerService).sendAlert(any(AlertRecord.class));
+        verify(outboxMessageFactory).build(eq("alert_record"), eq("999"), eq("alert.triggered"), any(AlertRecord.class));
+        verify(outboxMessageRepository).save(same(outboxMessage));
     }
 
     @Test
@@ -100,7 +107,7 @@ class AlertServiceTest {
         alertService.evaluate(sampleData);
 
         verify(alertRecordRepository, never()).save(any());
-        verify(kafkaProducerService, never()).sendAlert(any());
+        verify(outboxMessageRepository, never()).save(any());
     }
 
     @Test
@@ -190,10 +197,13 @@ class AlertServiceTest {
         when(alertRecordRepository.countRecentUnhandled(eq(1L), eq(100L), any(LocalDateTime.class)))
                 .thenReturn(0L);
         when(idGenerator.nextId()).thenReturn(999L);
+        OutboxMessage outboxMessage = new OutboxMessage();
+        when(outboxMessageFactory.build(eq("alert_record"), eq("999"), eq("alert.triggered"), any(AlertRecord.class)))
+                .thenReturn(outboxMessage);
 
         alertService.evaluate(sampleData);
 
         verify(alertRecordRepository).save(any(AlertRecord.class));
-        verify(kafkaProducerService).sendAlert(any(AlertRecord.class));
+        verify(outboxMessageRepository).save(same(outboxMessage));
     }
 }
