@@ -75,3 +75,4 @@ Thumbs.db
 .factorypath
 /.opencode/
 /.claude/
+/test_litellm.py
