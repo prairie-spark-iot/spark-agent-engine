@@ -119,6 +119,6 @@ class GlobalExceptionHandlerTest {
 
         assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, resp.getStatusCode());
         assertEquals(500, resp.getBody().getCode());
-        assertEquals("Internal server error: Unexpected error", resp.getBody().getMsg());
+        assertEquals("Internal server error", resp.getBody().getMsg());
     }
 }

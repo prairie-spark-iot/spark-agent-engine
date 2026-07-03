@@ -64,7 +64,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<R<Void>> handleGeneral(Exception ex) {
         log.error("[API] Unhandled exception", ex);
-        R<Void> body = new R<>(500, "Internal server error: " + ex.getMessage(), null);
+        R<Void> body = new R<>(500, "Internal server error", null);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 }
