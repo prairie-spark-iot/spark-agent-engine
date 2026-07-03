@@ -54,9 +54,14 @@ public class DiagnosisAgentService {
                 .orElseThrow(() -> new EntityNotFoundException(
                         "AlertRecord " + alertId + " not found for diagnosis"));
 
-        String userPrompt = promptBuilder.userPrompt(alert);
+        DiagnosisResult result = runInference(promptBuilder.userPrompt(alert));
 
-        DiagnosisResult result = runInference(userPrompt);
+        if (result.confidence() < appProperties.getDiagnosisRetryConfidenceThreshold()) {
+            DiagnosisResult retryResult = runInference(promptBuilder.retryUserPrompt(alert));
+            if (retryResult.confidence() > result.confidence()) {
+                result = retryResult;
+            }
+        }
 
         writeBack(alert, result);
         return result;

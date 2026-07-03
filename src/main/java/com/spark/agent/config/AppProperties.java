@@ -15,6 +15,9 @@ public class AppProperties {
     /** confidence (0-100) at/above which a diagnosis is accepted without human review */
     private int diagnosisConfidenceThreshold = 80;
 
+    /** confidence (0-100) below which diagnose() retries once with a wider (120-min) history window */
+    private int diagnosisRetryConfidenceThreshold = 40;
+
     private int outboxRelayIntervalMs = 2000;
     private int outboxRelayBatchSize = 100;
 }

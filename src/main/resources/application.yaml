@@ -145,6 +145,8 @@ app:
   device-heartbeat-key-prefix: "device:online:"
   # diagnosis confidence gate — >= this, diagnosis_status=2 (auto); below, human_review_required
   diagnosis-confidence-threshold: 80
+  # below this confidence, diagnose() retries once with a wider (120-min) history window
+  diagnosis-retry-confidence-threshold: 40
   # outbox relay — polls aiot_outbox for unpublished rows and sends them to Kafka
   outbox-relay-interval-ms: 2000
   outbox-relay-batch-size: 100

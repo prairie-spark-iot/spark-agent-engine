@@ -140,6 +140,69 @@ class DiagnosisAgentServiceTest {
     }
 
     @Test
+    void diagnose_highConfidence_doesNotRetry() {
+        when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
+
+        DiagnosisResult llmResult = new DiagnosisResult("root cause", "fix suggestion", 95, "detailed analysis");
+        when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.call()).thenReturn(callResponseSpec);
+        when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(llmResult);
+
+        service.diagnose(100L);
+
+        verify(chatClient, times(2)).prompt();
+    }
+
+    @Test
+    void diagnose_lowConfidence_retriesOnceWithWiderWindow() {
+        when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
+
+        DiagnosisResult lowConfResult = new DiagnosisResult("guess", "maybe", 35, "low confidence");
+        when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.call()).thenReturn(callResponseSpec);
+        when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(lowConfResult);
+
+        service.diagnose(100L);
+
+        verify(chatClient, times(4)).prompt();
+        verify(requestSpec).user(promptBuilder.retryUserPrompt(sampleAlert));
+    }
+
+    @Test
+    void diagnose_retryProducesHigherConfidence_writesBackRetryResult() {
+        when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
+
+        DiagnosisResult firstResult = new DiagnosisResult("guess", "maybe", 35, "low confidence");
+        DiagnosisResult retryResult = new DiagnosisResult("confirmed cause", "clear fix", 70, "wider-window analysis");
+        when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.call()).thenReturn(callResponseSpec);
+        when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(firstResult, retryResult);
+
+        DiagnosisResult result = service.diagnose(100L);
+
+        assertEquals(70, result.confidence());
+        assertEquals("confirmed cause", result.rootCause());
+        verify(alertRecordRepository).save(argThat(record ->
+                record.getConfidence().compareTo(BigDecimal.valueOf(70)) == 0));
+    }
+
+    @Test
+    void diagnose_retryDoesNotImprove_keepsFirstResult() {
+        when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
+
+        DiagnosisResult firstResult = new DiagnosisResult("first cause", "first fix", 35, "first analysis");
+        DiagnosisResult retryResult = new DiagnosisResult("retry cause", "retry fix", 20, "retry analysis");
+        when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.call()).thenReturn(callResponseSpec);
+        when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(firstResult, retryResult);
+
+        DiagnosisResult result = service.diagnose(100L);
+
+        assertEquals(35, result.confidence());
+        assertEquals("first cause", result.rootCause());
+    }
+
+    @Test
     void diagnose_writeBack_clearsDeletedFlag() {
         when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
 
