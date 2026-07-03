@@ -23,4 +23,6 @@ public interface AlertRecordRepository extends JpaRepository<AlertRecord, Long> 
 
     List<AlertRecord> findByDeviceKeyAndDeletedOrderByTriggerTimeDesc(
             String deviceKey, Short deleted, org.springframework.data.domain.Pageable pageable);
+
+    List<AlertRecord> findByRuleIdAndDeviceId(Long ruleId, Long deviceId);
 }
