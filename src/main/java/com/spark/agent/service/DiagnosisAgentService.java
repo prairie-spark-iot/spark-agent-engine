@@ -23,32 +23,6 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class DiagnosisAgentService {
 
-    private static final String SYSTEM_PROMPT = """
-            You are an expert industrial IoT diagnosis assistant for factory equipment.
-            You have tools available to investigate an alert: queryDeviceStatus (device info
-            and latest telemetry), queryDeviceHistory (historical telemetry for one
-            identifier), queryDeviceAlerts (past alerts for the device), and queryDeviceManual
-            (search equipment manuals by device model and question/symptom).
-            Use these tools as needed to gather the context you need — call queryDeviceStatus
-            first if you need the device's product model to search its manual. Then determine
-            the most likely root cause and a concrete, actionable remediation. Be specific and
-            concise.
-            """;
-
-    /**
-     * Structured output is requested in a separate, tool-free follow-up call rather than
-     * on the tool-calling call itself: small local models reliably drift into free-form
-     * prose once tool results are in context, which breaks JSON parsing of the entity()
-     * response. Asking a plain formatting question against the finished investigation is
-     * a much easier task and parses far more reliably.
-     */
-    private static final String STRUCTURE_SYSTEM_PROMPT = """
-            Extract the diagnosis below into the required structured fields: rootCause (concise
-            root cause), suggestion (concrete, actionable remediation), confidence (integer 0-100
-            reflecting how certain the diagnosis is), diagnosisDetail (the full diagnosis
-            narrative). Do not invent information beyond what's in the diagnosis.
-            """;
-
     /** diagnosis_status values written back to aiot_alert_record */
     private static final short STATUS_HUMAN_REVIEW_REQUIRED = 1;
     private static final short STATUS_DIAGNOSED = 2;
@@ -57,6 +31,7 @@ public class DiagnosisAgentService {
     private final ChatClient.Builder chatClientBuilder;
     private final ToolCallbackProvider deviceToolCallbacks;
     private final AppProperties appProperties;
+    private final DiagnosisPromptBuilder promptBuilder;
 
     private ChatClient chatClient;
 
@@ -79,18 +54,7 @@ public class DiagnosisAgentService {
                 .orElseThrow(() -> new EntityNotFoundException(
                         "AlertRecord " + alertId + " not found for diagnosis"));
 
-        String userPrompt = """
-                ## Alert
-                Device: %s
-                Identifier: %s
-                Trigger value: %s
-                Level: %d
-                Content: %s
-                Trigger time: %s
-
-                Investigate this alert using the available tools as needed, then give your diagnosis.
-                """.formatted(alert.getDeviceKey(), alert.getIdentifier(), alert.getTriggerValue(),
-                        alert.getLevel(), alert.getAlertContent(), alert.getTriggerTime());
+        String userPrompt = promptBuilder.userPrompt(alert);
 
         DiagnosisResult result = runInference(userPrompt);
 
@@ -102,13 +66,13 @@ public class DiagnosisAgentService {
         try {
             return CompletableFuture.supplyAsync(() -> {
                 String investigation = chatClient.prompt()
-                        .system(SYSTEM_PROMPT)
+                        .system(promptBuilder.systemPrompt())
                         .tools(deviceToolCallbacks)
                         .user(userPrompt)
                         .call()
                         .content();
                 return chatClient.prompt()
-                        .system(STRUCTURE_SYSTEM_PROMPT)
+                        .system(promptBuilder.structureSystemPrompt())
                         .user(investigation)
                         .call()
                         .entity(DiagnosisResult.class);

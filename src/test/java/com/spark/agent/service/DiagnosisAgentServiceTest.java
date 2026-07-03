@@ -38,14 +38,16 @@ class DiagnosisAgentServiceTest {
     private AppProperties appProperties;
 
     private DiagnosisAgentService service;
+    private DiagnosisPromptBuilder promptBuilder;
 
     private AlertRecord sampleAlert;
 
     @BeforeEach
     void setUp() {
         appProperties = new AppProperties();
+        promptBuilder = new DiagnosisPromptBuilder();
         service = new DiagnosisAgentService(alertRecordRepository, chatClientBuilder,
-                deviceToolCallbacks, appProperties);
+                deviceToolCallbacks, appProperties, promptBuilder);
 
         when(chatClientBuilder.build()).thenReturn(chatClient);
         service.init();
