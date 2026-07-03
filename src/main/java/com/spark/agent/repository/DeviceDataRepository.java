@@ -9,15 +9,19 @@ import java.util.List;
 
 public interface DeviceDataRepository extends JpaRepository<DeviceData, Long> {
 
-    @Query("""
-            SELECT d FROM DeviceData d
-            WHERE d.deviceKey = :deviceKey AND d.deleted = 0
-              AND d.reportTime = (
-                SELECT MAX(d2.reportTime) FROM DeviceData d2
-                WHERE d2.deviceKey = :deviceKey AND d2.identifier = d.identifier AND d2.deleted = 0
-              )
-            ORDER BY d.identifier
-            """)
+    @Query(value = """
+            SELECT ranked.id, ranked.device_id, ranked.device_key, ranked.identifier, ranked.value,
+                   ranked.value_num, ranked.quality, ranked.report_time, ranked.creator, ranked.create_time,
+                   ranked.updater, ranked.update_time, ranked.deleted, ranked.tenant_id
+            FROM (
+                SELECT d.*,
+                       ROW_NUMBER() OVER (PARTITION BY d.identifier ORDER BY d.report_time DESC) AS rn
+                FROM aiot_device_data d
+                WHERE d.device_key = :deviceKey AND d.deleted = 0
+            ) ranked
+            WHERE ranked.rn = 1
+            ORDER BY ranked.identifier
+            """, nativeQuery = true)
     List<DeviceData> findLatestByDeviceKey(String deviceKey);
 
     List<DeviceData> findByDeviceKeyAndIdentifierAndDeletedOrderByReportTimeDesc(
