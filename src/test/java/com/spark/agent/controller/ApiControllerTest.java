@@ -1,5 +1,10 @@
 package com.spark.agent.controller;
 
+import com.spark.agent.common.R;
+import com.spark.agent.dto.AlertRecordResponse;
+import com.spark.agent.dto.DeviceHistoryResponse;
+import com.spark.agent.dto.DeviceLatestResponse;
+import com.spark.agent.entity.AlertRecord;
 import com.spark.agent.entity.DeviceData;
 import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.DeviceDataRepository;
@@ -38,6 +43,49 @@ class ApiControllerTest {
         assertEquals(0, result.getCode());
         assertEquals("success", result.getMsg());
         assertFalse(result.getData().isEmpty());
+    }
+
+    @Test
+    void latest_returnsDtoNotJpaEntity() {
+        DeviceData entity = new DeviceData();
+        entity.setDeviceKey("DK_TEST");
+        entity.setIdentifier("temperature");
+        entity.setDeleted((short) 0);
+        entity.setTenantId(1L);
+        when(deviceDataRepository.findLatestByDeviceKey("DK_TEST")).thenReturn(List.of(entity));
+
+        R<List<DeviceLatestResponse>> result = controller.latest("DK_TEST");
+
+        assertEquals("temperature", result.getData().get(0).identifier());
+    }
+
+    @Test
+    void history_returnsDtoNotJpaEntity() {
+        DeviceData entity = new DeviceData();
+        entity.setDeviceKey("DK_TEST");
+        entity.setIdentifier("temperature");
+        when(deviceDataRepository.findByDeviceKeyAndIdentifierAndDeletedOrderByReportTimeDesc(
+                anyString(), anyString(), anyShort(), any()))
+                .thenReturn(List.of(entity));
+
+        R<List<DeviceHistoryResponse>> result = controller.history("DK_TEST", "temperature", 50);
+
+        assertEquals("temperature", result.getData().get(0).identifier());
+    }
+
+    @Test
+    void recentAlerts_returnsDtoNotJpaEntity() {
+        AlertRecord entity = new AlertRecord();
+        entity.setDeviceKey("DK_TEST");
+        entity.setLevel((short) 2);
+        entity.setDeleted((short) 0);
+        entity.setTenantId(1L);
+        when(alertRecordRepository.findByDeletedOrderByTriggerTimeDesc(anyShort(), any()))
+                .thenReturn(List.of(entity));
+
+        R<List<AlertRecordResponse>> result = controller.recentAlerts(20);
+
+        assertEquals("DK_TEST", result.getData().get(0).deviceKey());
     }
 
     @Test
