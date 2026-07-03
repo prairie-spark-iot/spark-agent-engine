@@ -84,14 +84,16 @@ public class MqttSubscriber implements ApplicationRunner {
     }
 
     private void handleMessage(Mqtt5Publish message) {
-        mqttExecutor.execute(() -> {
-            try {
-                String payload = new String(message.getPayloadAsBytes(), StandardCharsets.UTF_8);
-                DeviceTelemetryMessage msg = objectMapper.readValue(payload, DeviceTelemetryMessage.class);
-                telemetryService.process(msg);
-            } catch (Exception e) {
-                log.error("[MQTT] Error processing message from {}: {}", message.getTopic(), e.getMessage());
-            }
-        });
+        mqttExecutor.execute(() -> dispatch(message));
+    }
+
+    void dispatch(Mqtt5Publish message) {
+        try {
+            String payload = new String(message.getPayloadAsBytes(), StandardCharsets.UTF_8);
+            DeviceTelemetryMessage msg = objectMapper.readValue(payload, DeviceTelemetryMessage.class);
+            telemetryService.process(msg);
+        } catch (Exception e) {
+            log.error("[MQTT] Error processing message from {}: {}", message.getTopic(), e.getMessage());
+        }
     }
 }
