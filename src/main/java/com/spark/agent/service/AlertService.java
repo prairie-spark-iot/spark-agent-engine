@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static java.util.Collections.emptyList;
 
@@ -32,6 +33,7 @@ public class AlertService {
     }
     private final Map<String, CacheEntry<List<AlertRule>>> rulesCache = new ConcurrentHashMap<>();
     private static final long RULES_CACHE_TTL_MS = 5_000;
+    private static final long RULES_CACHE_JITTER_MS = 1_000;
     private static final int RULES_CACHE_MAX_SIZE = 10_000;
 
     private List<AlertRule> getActiveRules(Long deviceId, String identifier) {
@@ -41,7 +43,8 @@ public class AlertService {
             return entry.value();
         }
         List<AlertRule> rules = alertRuleRepository.findActiveRules(deviceId, identifier);
-        rulesCache.put(key, new CacheEntry<>(rules, System.currentTimeMillis() + RULES_CACHE_TTL_MS));
+        long ttl = RULES_CACHE_TTL_MS + ThreadLocalRandom.current().nextLong(RULES_CACHE_JITTER_MS);
+        rulesCache.put(key, new CacheEntry<>(rules, System.currentTimeMillis() + ttl));
         if (rulesCache.size() > RULES_CACHE_MAX_SIZE) {
             evictStaleCacheEntries();
         }

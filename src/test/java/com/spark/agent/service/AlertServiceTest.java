@@ -94,6 +94,18 @@ class AlertServiceTest {
     }
 
     @Test
+    void evaluate_secondCallWithinTtl_reusesCachedRules() {
+        when(alertRuleRepository.findActiveRules(1L, "temperature")).thenReturn(List.of(sampleRule));
+        when(alertRecordRepository.countRecentUnhandled(eq(1L), eq(100L), any(LocalDateTime.class)))
+                .thenReturn(1L); // debounced both times — keeps this test focused on caching, not insert side-effects
+
+        alertService.evaluate(sampleData);
+        alertService.evaluate(sampleData);
+
+        verify(alertRuleRepository, times(1)).findActiveRules(1L, "temperature");
+    }
+
+    @Test
     void evaluate_matchingRule_createsAlertAndOutboxRow() {
         when(alertRuleRepository.findActiveRules(1L, "temperature")).thenReturn(List.of(sampleRule));
         when(alertRecordRepository.countRecentUnhandled(eq(1L), eq(100L), any(LocalDateTime.class)))
