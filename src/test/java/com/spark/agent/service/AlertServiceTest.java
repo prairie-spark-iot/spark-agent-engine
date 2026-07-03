@@ -2,6 +2,7 @@ package com.spark.agent.service;
 
 import com.spark.agent.common.SnowflakeIdGenerator;
 import com.spark.agent.config.AppProperties;
+import com.spark.agent.entity.AlertOperator;
 import com.spark.agent.entity.AlertRecord;
 import com.spark.agent.entity.AlertRule;
 import com.spark.agent.entity.DeviceData;
@@ -61,7 +62,7 @@ class AlertServiceTest {
         sampleRule = new AlertRule();
         sampleRule.setId(100L);
         sampleRule.setName("High Temperature");
-        sampleRule.setOperator("gt");
+        sampleRule.setOperator(AlertOperator.GT);
         sampleRule.setThreshold("100");
         sampleRule.setLevel((short) 2);
     }
@@ -125,37 +126,37 @@ class AlertServiceTest {
     @Test
     void evaluate_gtOperator_triggersWhenAbove() {
         sampleData.setValueNum(new BigDecimal("101"));
-        testOperatorTriggers("gt", "100");
+        testOperatorTriggers(AlertOperator.GT, "100");
     }
 
     @Test
     void evaluate_ltOperator_triggersWhenBelow() {
         sampleData.setValueNum(new BigDecimal("50"));
-        testOperatorTriggers("lt", "100");
+        testOperatorTriggers(AlertOperator.LT, "100");
     }
 
     @Test
     void evaluate_gteOperator_triggersWhenEqual() {
         sampleData.setValueNum(new BigDecimal("100"));
-        testOperatorTriggers("gte", "100");
+        testOperatorTriggers(AlertOperator.GTE, "100");
     }
 
     @Test
     void evaluate_lteOperator_triggersWhenEqual() {
         sampleData.setValueNum(new BigDecimal("100"));
-        testOperatorTriggers("lte", "100");
+        testOperatorTriggers(AlertOperator.LTE, "100");
     }
 
     @Test
     void evaluate_eqOperator_triggersOnExactMatch() {
         sampleData.setValueNum(new BigDecimal("99.9"));
-        testOperatorTriggers("eq", "99.9");
+        testOperatorTriggers(AlertOperator.EQ, "99.9");
     }
 
     @Test
     void evaluate_eqOperator_doesNotTriggerOnNearMatch() {
         sampleData.setValueNum(new BigDecimal("99.9001"));
-        sampleRule.setOperator("eq");
+        sampleRule.setOperator(AlertOperator.EQ);
         sampleRule.setThreshold("99.9");
         when(alertRuleRepository.findActiveRules(1L, "temperature")).thenReturn(List.of(sampleRule));
 
@@ -167,7 +168,7 @@ class AlertServiceTest {
     @Test
     void evaluate_neOperator_triggersOnDifferent() {
         sampleData.setValueNum(new BigDecimal("50"));
-        testOperatorTriggers("ne", "100");
+        testOperatorTriggers(AlertOperator.NE, "100");
     }
 
     @Test
@@ -181,8 +182,8 @@ class AlertServiceTest {
     }
 
     @Test
-    void evaluate_invalidOperator_doesNotTrigger() {
-        sampleRule.setOperator("invalid_op");
+    void evaluate_unknownOperator_doesNotTrigger() {
+        sampleRule.setOperator(AlertOperator.UNKNOWN);
         when(alertRuleRepository.findActiveRules(1L, "temperature")).thenReturn(List.of(sampleRule));
 
         alertService.evaluate(sampleData);
@@ -190,7 +191,7 @@ class AlertServiceTest {
         verify(alertRecordRepository, never()).save(any());
     }
 
-    private void testOperatorTriggers(String operator, String threshold) {
+    private void testOperatorTriggers(AlertOperator operator, String threshold) {
         sampleRule.setOperator(operator);
         sampleRule.setThreshold(threshold);
         when(alertRuleRepository.findActiveRules(1L, "temperature")).thenReturn(List.of(sampleRule));

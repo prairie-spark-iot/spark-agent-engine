@@ -96,19 +96,7 @@ public class AlertService {
     private boolean matches(AlertRule rule, double value) {
         try {
             double threshold = Double.parseDouble(rule.getThreshold());
-            double epsilon = 1e-10;
-            return switch (rule.getOperator()) {
-                case "gt"  -> value > threshold;
-                case "lt"  -> value < threshold;
-                case "gte" -> value >= threshold;
-                case "lte" -> value <= threshold;
-                case "eq"  -> Math.abs(value - threshold) < epsilon;
-                case "ne"  -> Math.abs(value - threshold) >= epsilon;
-                default -> {
-                    log.warn("[Alert] Unknown operator: {}", rule.getOperator());
-                    yield false;
-                }
-            };
+            return rule.getOperator().matches(value, threshold);
         } catch (NumberFormatException e) {
             log.warn("[Alert] Unparseable threshold '{}' for rule {}", rule.getThreshold(), rule.getId());
             return false;
@@ -131,7 +119,7 @@ public class AlertService {
         r.setLevel(rule.getLevel());
         r.setAlertContent(String.format("设备 %s 属性 %s 当前值 %s 触发规则「%s」(阈值: %s %s)",
                 data.getDeviceKey(), data.getIdentifier(), data.getValue(),
-                rule.getName(), rule.getOperator(), rule.getThreshold()));
+                rule.getName(), rule.getOperator().code(), rule.getThreshold()));
         r.setTriggerTime(data.getReportTime());
         r.setDiagnosisStatus((short) 0);
         r.setHandleStatus((short) 0);

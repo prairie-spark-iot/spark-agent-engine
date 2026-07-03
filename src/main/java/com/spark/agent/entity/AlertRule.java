@@ -28,7 +28,8 @@ public class AlertRule extends BaseEntity {
 
     /** gt / lt / gte / lte / eq / ne */
     @Column(name = "operator", nullable = false)
-    private String operator;
+    @Convert(converter = AlertOperatorConverter.class)
+    private AlertOperator operator;
 
     /** stored as varchar in DB */
     @Column(name = "threshold", nullable = false)
