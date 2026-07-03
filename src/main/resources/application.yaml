@@ -59,11 +59,20 @@ spring:
       properties:
         enable.idempotence: true                    # dedup retries; Kafka 4.x default, made explicit
         max.in.flight.requests.per.connection: 5    # max with idempotence enabled
+    consumer:
+      properties:
+        # diagnose() can run 2 sequential LLM calls (up to 4 with the low-confidence retry),
+        # each with a 150s timeout; default 300000ms was borderline and tripped false
+        # rebalances (see listener.concurrency comment below for why calls queue up).
+        max.poll.interval.ms: 600000
     listener:
       missing-topics-fatal: false   # don't crash if a consumer topic hasn't been created yet
-      # iot.alert.triggered has 6 partitions (widened from 1); one listener thread per
-      # partition so the ~45s LLM-bound diagnosis of one alert no longer blocks the rest.
-      concurrency: 6
+      # iot.alert.triggered has 6 partitions, but Ollama's llama-server on this box runs
+      # with -np 1 (one inference request at a time, CPU-only). Concurrency > 1 doesn't add
+      # real parallelism here — it just makes multiple Kafka threads queue on the same
+      # Ollama slot, each burning its own 150s per-call timeout while waiting. Match the
+      # actual backend capacity instead of the partition count.
+      concurrency: 1
 
   # ── Jackson 3.x ──────────────────────────────────────────────────────────
   # Jackson 3.x moved date features from SerializationFeature to DateTimeFeature (tools.jackson.databind.cfg)

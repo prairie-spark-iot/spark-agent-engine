@@ -81,7 +81,7 @@ public class DiagnosisAgentService {
                         .user(investigation)
                         .call()
                         .entity(DiagnosisResult.class);
-            }).orTimeout(150, TimeUnit.SECONDS).join();
+            }).orTimeout(appProperties.getDiagnosisTimeoutSeconds(), TimeUnit.SECONDS).join();
         } catch (Exception e) {
             log.error("[Diagnosis] LLM inference failed or timed out: {}", e.getMessage());
             return new DiagnosisResult("", "", 0, "Inference failed: " + e.getMessage());
