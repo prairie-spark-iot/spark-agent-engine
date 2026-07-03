@@ -64,12 +64,16 @@ MQTT (EMQX :1883)
         ├─► DeviceHeartbeatService.heartbeat()    Redis SETNX+EX; DB write only on
         │     └─► DeviceRepository.markOnline()   offline→online transition
         ├─► DeviceDataRepository.saveAll()        batch insert, snowflake IDs
-        ├─► KafkaProducerService.sendTelemetry()  one message per property row
+        ├─► OutboxMessageFactory.build() + OutboxMessageRepository.saveAll()  one outbox row per property row
         └─► AlertService.evaluate()               per property row
               ├─► AlertRuleRepository.findActiveRules()
-              ├─► AlertRecordRepository.countRecentUnhandled()  debounce
+              ├─► AlertRecordRepository.countRecentUnhandled()  debounce (pg_advisory_xact_lock-guarded)
               ├─► AlertRecordRepository.save()
-              └─► KafkaProducerService.sendAlert()
+              └─► OutboxMessageFactory.build() + OutboxMessageRepository.save()
+
+OutboxRelayService (@Scheduled, polls aiot_outbox for unpublished rows)
+  └─► KafkaProducerService.sendRaw()   publishes to iot.device.data / iot.alert.triggered, marks published_at
+  └─► purge()  (@Scheduled, daily)     deletes published rows older than app.outbox-purge-retention-days
 
 Redis key expiry (keyspace notification: __keyevent@0__:expired)
   └─► DeviceHeartbeatService.onMessage()   filters device:online:* keys
@@ -88,7 +92,7 @@ ApiController  GET endpoints → DeviceDataRepository / AlertRecordRepository
 
 **Alert debounce** — `AlertService` calls `countRecentUnhandled(deviceId, ruleId, since)` before inserting. If count > 0, the alert is skipped. Window is `app.alert-debounce-minutes` (default 5 min).
 
-**Kafka send inside transaction** — `KafkaProducerService` sends within the `@Transactional` scope of `TelemetryService`. If the DB transaction rolls back, the Kafka message is already sent (at-most-once). Acceptable for phase 1; upgrade to transactional outbox in phase 2 if needed.
+**Transactional outbox** — `TelemetryService` and `AlertService` write `OutboxMessage` rows in the same `@Transactional` scope as their business writes, instead of calling Kafka directly. `OutboxRelayService.relay()` polls unpublished rows on a schedule (`app.outbox-relay-interval-ms`) and publishes them via `KafkaProducerService.sendRaw()`, marking `published_at` on success. If the DB transaction rolls back, no outbox row exists, so nothing is published — this is now at-least-once, not at-most-once. `OutboxRelayService.purge()` deletes published rows older than `app.outbox-purge-retention-days` on a daily schedule.
 
 **`aiot_alert_rule.threshold` is VARCHAR** — the DB column is `character varying(64)`, not numeric. `AlertService.matches()` parses it as `Double` at runtime.
 

@@ -6,7 +6,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
-import tools.jackson.databind.ObjectMapper;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -24,7 +23,7 @@ class KafkaProducerServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new KafkaProducerService(kafkaTemplate, new ObjectMapper());
+        service = new KafkaProducerService(kafkaTemplate);
     }
 
     @Test
