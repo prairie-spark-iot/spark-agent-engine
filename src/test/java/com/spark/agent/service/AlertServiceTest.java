@@ -10,6 +10,8 @@ import com.spark.agent.entity.OutboxMessage;
 import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.AlertRuleRepository;
 import com.spark.agent.repository.OutboxMessageRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +39,10 @@ class AlertServiceTest {
     private OutboxMessageFactory outboxMessageFactory;
     @Mock
     private SnowflakeIdGenerator idGenerator;
+    @Mock
+    private EntityManager entityManager;
+    @Mock
+    private Query nativeQuery;
 
     private AppProperties appProperties;
     private AlertService alertService;
@@ -48,8 +54,13 @@ class AlertServiceTest {
     void setUp() {
         appProperties = new AppProperties();
         appProperties.setAlertDebounceMinutes(5);
+
+        lenient().when(entityManager.createNativeQuery(anyString())).thenReturn(nativeQuery);
+        lenient().when(nativeQuery.setParameter(anyInt(), any())).thenReturn(nativeQuery);
+        lenient().when(nativeQuery.getSingleResult()).thenReturn(null);
+
         alertService = new AlertService(alertRuleRepository, alertRecordRepository,
-                outboxMessageRepository, outboxMessageFactory, idGenerator, appProperties);
+                outboxMessageRepository, outboxMessageFactory, idGenerator, appProperties, entityManager);
 
         sampleData = new DeviceData();
         sampleData.setDeviceId(1L);

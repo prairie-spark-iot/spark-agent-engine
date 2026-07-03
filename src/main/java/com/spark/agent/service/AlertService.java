@@ -9,6 +9,7 @@ import com.spark.agent.entity.OutboxMessage;
 import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.AlertRuleRepository;
 import com.spark.agent.repository.OutboxMessageRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,12 +26,6 @@ import static java.util.Collections.emptyList;
 @Service
 @RequiredArgsConstructor
 public class AlertService {
-
-    private final Map<String, Object> debounceLocks = new ConcurrentHashMap<>();
-
-    private Object debounceLock(Long deviceId, Long ruleId) {
-        return debounceLocks.computeIfAbsent(deviceId + ":" + ruleId, k -> new Object());
-    }
 
     private record CacheEntry<V>(V value, long expiresAt) {
         boolean isValid() { return System.currentTimeMillis() < expiresAt; }
@@ -70,6 +65,7 @@ public class AlertService {
     private final OutboxMessageFactory outboxMessageFactory;
     private final SnowflakeIdGenerator idGenerator;
     private final AppProperties appProperties;
+    private final EntityManager entityManager;
 
     @Transactional
     public void evaluate(DeviceData data) {
@@ -81,16 +77,30 @@ public class AlertService {
         for (AlertRule rule : rules) {
             if (!matches(rule, value)) continue;
 
-            synchronized (debounceLock(data.getDeviceId(), rule.getId())) {
-                if (isDebounced(data.getDeviceId(), rule.getId())) continue;
+            acquireDebounceLock(data.getDeviceId(), rule.getId());
+            if (isDebounced(data.getDeviceId(), rule.getId())) continue;
 
-                AlertRecord record = buildRecord(data, rule, value);
-                alertRecordRepository.save(record);
-                outboxMessageRepository.save(
-                        outboxMessageFactory.build("alert_record", String.valueOf(record.getId()), "alert.triggered", record));
-                log.info("[Alert] Rule '{}' triggered for {} {}: {}", rule.getName(), data.getDeviceKey(), data.getIdentifier(), value);
-            }
+            AlertRecord record = buildRecord(data, rule, value);
+            alertRecordRepository.save(record);
+            outboxMessageRepository.save(
+                    outboxMessageFactory.build("alert_record", String.valueOf(record.getId()), "alert.triggered", record));
+            log.info("[Alert] Rule '{}' triggered for {} {}: {}", rule.getName(), data.getDeviceKey(), data.getIdentifier(), value);
         }
+    }
+
+    /**
+     * Session-scoped advisory lock keyed on (deviceId, ruleId), held for the rest of this
+     * @Transactional method and released automatically at commit/rollback. Serializes the
+     * debounce check-then-insert across threads AND across multiple app instances, unlike
+     * the in-JVM lock this replaces. hashtextextended collisions only cause unrelated
+     * device/rule pairs to serialize against each other, never a correctness issue.
+     */
+    private void acquireDebounceLock(Long deviceId, Long ruleId) {
+        entityManager.createNativeQuery(
+                        "SELECT pg_advisory_xact_lock(hashtextextended(CONCAT(CAST(?1 AS text), ':', CAST(?2 AS text)), 0))")
+                .setParameter(1, deviceId)
+                .setParameter(2, ruleId)
+                .getSingleResult();
     }
 
     private boolean matches(AlertRule rule, double value) {
