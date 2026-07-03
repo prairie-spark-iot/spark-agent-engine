@@ -69,20 +69,25 @@ public class TelemetryService {
             return rows;
         }
         for (Map.Entry<String, Object> entry : properties.entrySet()) {
-            DeviceData data = new DeviceData();
-            data.setId(idGenerator.nextId());
-            data.setDeviceId(deviceId);
-            data.setDeviceKey(msg.getDeviceKey());
-            data.setIdentifier(entry.getKey());
-            data.setReportTime(reportTime);
-            data.setQuality((short) 1);
+            try {
+                DeviceData data = new DeviceData();
+                data.setId(idGenerator.nextId());
+                data.setDeviceId(deviceId);
+                data.setDeviceKey(msg.getDeviceKey());
+                data.setIdentifier(entry.getKey());
+                data.setReportTime(reportTime);
+                data.setQuality((short) 1);
 
-            Object val = entry.getValue();
-            data.setValue(String.valueOf(val));
-            if (val instanceof Number n) {
-                data.setValueNum(BigDecimal.valueOf(n.doubleValue()));
+                Object val = entry.getValue();
+                data.setValue(String.valueOf(val));
+                if (val instanceof Number n) {
+                    data.setValueNum(BigDecimal.valueOf(n.doubleValue()));
+                }
+                rows.add(data);
+            } catch (Exception e) {
+                log.warn("[Telemetry] Failed to parse property {}={} from {}: {}",
+                        entry.getKey(), entry.getValue(), msg.getDeviceKey(), e.getMessage());
             }
-            rows.add(data);
         }
         return rows;
     }

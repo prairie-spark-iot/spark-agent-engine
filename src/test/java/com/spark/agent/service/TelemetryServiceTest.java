@@ -106,4 +106,30 @@ class TelemetryServiceTest {
         verifyNoInteractions(alertService);
         verify(outboxMessageFactory, never()).build(any(), any(), any(), any());
     }
+
+    @Test
+    void process_onePropertyThrowsDuringParsing_skipsItAndKeepsOthers() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("temperature", Double.NaN);
+        properties.put("pressure", 156.2);
+        sampleMsg.setProperties(properties);
+
+        when(deviceRepository.findByDeviceKeyAndDeleted("DK_TEST_001", (short) 0)).thenReturn(Optional.of(sampleDevice));
+        when(idGenerator.nextId()).thenReturn(1001L);
+        when(outboxMessageFactory.build(eq("device_data"), any(), eq("device.data"), any(DeviceData.class)))
+                .thenAnswer(inv -> new OutboxMessage());
+
+        telemetryService.process(sampleMsg);
+
+        ArgumentCaptor<List<DeviceData>> rowsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(deviceDataRepository).saveAll(rowsCaptor.capture());
+        assertEquals(1, rowsCaptor.getValue().size());
+        assertEquals("pressure", rowsCaptor.getValue().get(0).getIdentifier());
+
+        verify(alertService, times(1)).evaluate(any(DeviceData.class));
+
+        ArgumentCaptor<List<OutboxMessage>> outboxCaptor = ArgumentCaptor.forClass(List.class);
+        verify(outboxMessageRepository).saveAll(outboxCaptor.capture());
+        assertEquals(1, outboxCaptor.getValue().size());
+    }
 }
