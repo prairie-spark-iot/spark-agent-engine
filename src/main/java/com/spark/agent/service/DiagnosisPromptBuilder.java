@@ -54,4 +54,21 @@ public class DiagnosisPromptBuilder {
                 """.formatted(alert.getDeviceKey(), alert.getIdentifier(), alert.getTriggerValue(),
                         alert.getLevel(), alert.getAlertContent(), alert.getTriggerTime());
     }
+
+    public String retryUserPrompt(AlertRecord alert) {
+        return """
+                ## Alert
+                Device: %s
+                Identifier: %s
+                Trigger value: %s
+                Level: %d
+                Content: %s
+                Trigger time: %s
+
+                This is a retry: the previous investigation produced a low-confidence diagnosis.
+                Widen your investigation — when calling queryDeviceHistory, use hours=2 (120
+                minutes) to capture more historical context — then give your diagnosis.
+                """.formatted(alert.getDeviceKey(), alert.getIdentifier(), alert.getTriggerValue(),
+                        alert.getLevel(), alert.getAlertContent(), alert.getTriggerTime());
+    }
 }

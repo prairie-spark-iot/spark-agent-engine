@@ -39,6 +39,19 @@ class DiagnosisPromptBuilderTest {
     }
 
     @Test
+    void retryUserPrompt_includesAllAlertFieldsAndWidenWindowInstruction() {
+        String prompt = builder.retryUserPrompt(alert);
+
+        assertTrue(prompt.contains("DK_TEST"));
+        assertTrue(prompt.contains("temperature"));
+        assertTrue(prompt.contains("150.5"));
+        assertTrue(prompt.contains("High temperature alert"));
+        assertTrue(prompt.contains("2026-07-03T10:30"));
+        assertTrue(prompt.contains("hours=2"));
+        assertTrue(prompt.contains("120"));
+    }
+
+    @Test
     void systemPrompt_mentionsAvailableTools() {
         String prompt = builder.systemPrompt();
 
