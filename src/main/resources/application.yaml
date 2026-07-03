@@ -147,9 +147,14 @@ app:
   diagnosis-confidence-threshold: 80
   # below this confidence, diagnose() retries once with a wider (120-min) history window
   diagnosis-retry-confidence-threshold: 40
+  # timeout for a single LLM inference call during diagnosis (seconds)
+  diagnosis-timeout-seconds: 150
   # outbox relay — polls aiot_outbox for unpublished rows and sends them to Kafka
   outbox-relay-interval-ms: 2000
   outbox-relay-batch-size: 100
+  # outbox purge — deletes published aiot_outbox rows older than this many days
+  outbox-purge-retention-days: 7
+  outbox-purge-cron: "0 0 3 * * *"   # daily at 03:00
 
 # ── Custom: Kafka Topics ──────────────────────────────────────────────────
 kafka:

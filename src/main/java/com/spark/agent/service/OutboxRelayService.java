@@ -55,4 +55,13 @@ public class OutboxRelayService {
     private String extractDeviceKey(String payloadJson) {
         return objectMapper.readTree(payloadJson).get("deviceKey").asText();
     }
+
+    @Scheduled(cron = "${app.outbox-purge-cron:0 0 3 * * *}")
+    public void purge() {
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(appProperties.getOutboxPurgeRetentionDays());
+        int deleted = outboxMessageRepository.deletePublishedBefore(cutoff);
+        if (deleted > 0) {
+            log.info("[OutboxRelay] Purged {} published outbox rows older than {}", deleted, cutoff);
+        }
+    }
 }

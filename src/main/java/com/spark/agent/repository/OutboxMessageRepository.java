@@ -18,4 +18,9 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
     @Transactional
     @Query("UPDATE OutboxMessage o SET o.publishedAt = :publishedAt WHERE o.id = :id")
     void markPublished(Long id, LocalDateTime publishedAt);
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM OutboxMessage o WHERE o.publishedAt IS NOT NULL AND o.publishedAt < :cutoff")
+    int deletePublishedBefore(LocalDateTime cutoff);
 }

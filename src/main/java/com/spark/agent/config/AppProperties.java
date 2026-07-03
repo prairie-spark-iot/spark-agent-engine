@@ -18,6 +18,12 @@ public class AppProperties {
     /** confidence (0-100) below which diagnose() retries once with a wider (120-min) history window */
     private int diagnosisRetryConfidenceThreshold = 40;
 
+    /** timeout in seconds for a single LLM inference call during diagnosis */
+    private int diagnosisTimeoutSeconds = 150;
+
     private int outboxRelayIntervalMs = 2000;
     private int outboxRelayBatchSize = 100;
+
+    private int outboxPurgeRetentionDays = 7;
+    private String outboxPurgeCron = "0 0 3 * * *";
 }

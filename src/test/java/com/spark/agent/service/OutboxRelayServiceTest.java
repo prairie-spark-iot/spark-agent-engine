@@ -128,4 +128,14 @@ class OutboxRelayServiceTest {
         verifyNoInteractions(kafkaProducerService);
         verify(outboxMessageRepository, never()).markPublished(any(), any());
     }
+
+    @Test
+    void purge_deletesPublishedRowsOlderThanRetention() {
+        appProperties.setOutboxPurgeRetentionDays(7);
+        when(outboxMessageRepository.deletePublishedBefore(any(LocalDateTime.class))).thenReturn(3);
+
+        relayService.purge();
+
+        verify(outboxMessageRepository).deletePublishedBefore(any(LocalDateTime.class));
+    }
 }
