@@ -68,6 +68,11 @@ Thumbs.db
 
 # ========== git worktrees ==========
 .worktrees/
+
+# ========== local env files (may contain credentials) ==========
+.env
+.env.*
+!.env.example
 # OpenCode / JDT LS
 .classpath
 .project
