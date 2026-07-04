@@ -143,6 +143,9 @@ mqtt:
   host: localhost
   port: 1883
   topic: "/sys/+/+/thing/event/property/post"
+  online-topic: "device/online/+"
+  offline-topic: "device/offline/+"       # also catches the emulator's crash LWT: device/offline/emulator
+  status-topic: "/sys/+/+/thing/event/status/post"
   client-id-prefix: spark-agent
 
 # ── Custom: Business Rules ────────────────────────────────────────────────

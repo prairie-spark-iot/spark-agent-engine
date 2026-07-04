@@ -58,7 +58,9 @@ Boot 4 auto-configures `KafkaTemplate<Object, Object>`, not `KafkaTemplate<Strin
 ```
 MQTT (EMQX :1883)
   └─► MqttSubscriber          HiveMQ async client; reconnects automatically;
-        │                     re-subscribes via addConnectedListener on each connect
+        │                     re-subscribes via addConnectedListener on each connect;
+        │                     also subscribes to device/online, device/offline (+ LWT), and
+        │                     status/post for instant online/offline transitions
         ▼
       TelemetryService         @Transactional; one call per MQTT message
         ├─► DeviceHeartbeatService.heartbeat()    Redis SETNX+EX; DB write only on
@@ -137,6 +139,9 @@ mqtt:
   host: localhost          # EMQX host
   port: 1883
   topic: "/sys/+/+/thing/event/property/post"
+  online-topic: "device/online/+"                     # emulator's explicit online events
+  offline-topic: "device/offline/+"                    # explicit offline events + emulator crash LWT (device/offline/emulator)
+  status-topic: "/sys/+/+/thing/event/status/post"     # periodic uptime heartbeat; deviceKey used to refresh online state, uptime value discarded
   client-id-prefix: spark-agent
 
 app:

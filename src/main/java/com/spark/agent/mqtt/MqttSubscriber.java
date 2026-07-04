@@ -6,6 +6,8 @@ import com.hivemq.client.mqtt.mqtt5.Mqtt5AsyncClient;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5Client;
 import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import com.spark.agent.config.MqttProperties;
+import com.spark.agent.repository.DeviceRepository;
+import com.spark.agent.service.DeviceHeartbeatService;
 import com.spark.agent.service.TelemetryService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -25,13 +27,19 @@ public class MqttSubscriber implements ApplicationRunner {
 
     private final MqttProperties props;
     private final TelemetryService telemetryService;
+    private final DeviceRepository deviceRepository;
+    private final DeviceHeartbeatService heartbeatService;
     private final ObjectMapper objectMapper;
     private Mqtt5AsyncClient client;
     private final Executor mqttExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
-    public MqttSubscriber(MqttProperties props, TelemetryService telemetryService, ObjectMapper objectMapper) {
+    public MqttSubscriber(MqttProperties props, TelemetryService telemetryService,
+                           DeviceRepository deviceRepository, DeviceHeartbeatService heartbeatService,
+                           ObjectMapper objectMapper) {
         this.props = props;
         this.telemetryService = telemetryService;
+        this.deviceRepository = deviceRepository;
+        this.heartbeatService = heartbeatService;
         this.objectMapper = objectMapper;
     }
 
@@ -66,13 +74,20 @@ public class MqttSubscriber implements ApplicationRunner {
     }
 
     private void subscribe() {
-        log.info("[MQTT] Subscribing to {}", props.getTopic());
+        subscribeTo(props.getTopic(), this::handleMessage);
+        subscribeTo(props.getOnlineTopic(), this::handleOnlineMessage);
+        subscribeTo(props.getOfflineTopic(), this::handleOfflineMessage);
+        subscribeTo(props.getStatusTopic(), this::handleStatusMessage);
+    }
+
+    private void subscribeTo(String topicFilter, java.util.function.Consumer<Mqtt5Publish> callback) {
+        log.info("[MQTT] Subscribing to {}", topicFilter);
         client.subscribeWith()
-                .topicFilter(props.getTopic())
+                .topicFilter(topicFilter)
                 .qos(MqttQos.AT_LEAST_ONCE)
-                .callback(this::handleMessage)
+                .callback(callback::accept)
                 .send()
-                .thenAccept(ack -> log.info("[MQTT] Subscribed: {}", ack.getReasonCodes()));
+                .thenAccept(ack -> log.info("[MQTT] Subscribed to {}: {}", topicFilter, ack.getReasonCodes()));
     }
 
     @PreDestroy
@@ -87,6 +102,18 @@ public class MqttSubscriber implements ApplicationRunner {
         mqttExecutor.execute(() -> dispatch(message));
     }
 
+    private void handleOnlineMessage(Mqtt5Publish message) {
+        mqttExecutor.execute(() -> dispatchOnline(message));
+    }
+
+    private void handleOfflineMessage(Mqtt5Publish message) {
+        mqttExecutor.execute(() -> dispatchOffline(message));
+    }
+
+    private void handleStatusMessage(Mqtt5Publish message) {
+        mqttExecutor.execute(() -> dispatchStatus(message));
+    }
+
     void dispatch(Mqtt5Publish message) {
         try {
             String payload = new String(message.getPayloadAsBytes(), StandardCharsets.UTF_8);
@@ -94,6 +121,46 @@ public class MqttSubscriber implements ApplicationRunner {
             telemetryService.process(msg);
         } catch (Exception e) {
             log.error("[MQTT] Error processing message from {}: {}", message.getTopic(), e.getMessage());
+        }
+    }
+
+    void dispatchOnline(Mqtt5Publish message) {
+        try {
+            String payload = new String(message.getPayloadAsBytes(), StandardCharsets.UTF_8);
+            DeviceConnectionEventMessage msg = objectMapper.readValue(payload, DeviceConnectionEventMessage.class);
+            deviceRepository.findByDeviceKeyAndDeleted(msg.getDeviceKey(), (short) 0)
+                    .ifPresentOrElse(
+                            device -> heartbeatService.heartbeat(device.getId(), device.getDeviceKey()),
+                            () -> log.warn("[MQTT] Online event for unknown device: {}", msg.getDeviceKey()));
+        } catch (Exception e) {
+            log.error("[MQTT] Error processing online event from {}: {}", message.getTopic(), e.getMessage());
+        }
+    }
+
+    void dispatchOffline(Mqtt5Publish message) {
+        try {
+            String payload = new String(message.getPayloadAsBytes(), StandardCharsets.UTF_8);
+            DeviceConnectionEventMessage msg = objectMapper.readValue(payload, DeviceConnectionEventMessage.class);
+            if ("emulator".equals(msg.getDeviceKey())) {
+                heartbeatService.markAllOffline();
+            } else {
+                heartbeatService.markOfflineNow(msg.getDeviceKey());
+            }
+        } catch (Exception e) {
+            log.error("[MQTT] Error processing offline event from {}: {}", message.getTopic(), e.getMessage());
+        }
+    }
+
+    void dispatchStatus(Mqtt5Publish message) {
+        try {
+            String payload = new String(message.getPayloadAsBytes(), StandardCharsets.UTF_8);
+            DeviceStatusEventMessage msg = objectMapper.readValue(payload, DeviceStatusEventMessage.class);
+            deviceRepository.findByDeviceKeyAndDeleted(msg.getDeviceKey(), (short) 0)
+                    .ifPresentOrElse(
+                            device -> heartbeatService.heartbeat(device.getId(), device.getDeviceKey()),
+                            () -> log.warn("[MQTT] Status event for unknown device: {}", msg.getDeviceKey()));
+        } catch (Exception e) {
+            log.error("[MQTT] Error processing status event from {}: {}", message.getTopic(), e.getMessage());
         }
     }
 }
