@@ -6,10 +6,14 @@
 一个 Spring Boot 4 / Java 25 服务 —— 从一条 MQTT 报文，到一份 LLM 诊断结论，全程无需人工介入。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
-![Java](https://img.shields.io/badge/Java-25-orange)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.0-6DB33F)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-336791)
-![Kafka](https://img.shields.io/badge/Kafka-4.x-231F20)
+![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.0-6DB33F?logo=springboot&logoColor=white)
+![Gradle](https://img.shields.io/badge/Gradle-9.5-02303A?logo=gradle&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-336791?logo=postgresql&logoColor=white)
+![Kafka](https://img.shields.io/badge/Kafka-4.x-231F20?logo=apachekafka&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
+![MQTT](https://img.shields.io/badge/MQTT-5.0-660066?logo=mqtt&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-qwen2.5%20%7C%20nomic--embed--text-000000?logo=ollama&logoColor=white)
 
 [English](./README.md) · **简体中文**
 
@@ -33,7 +37,7 @@
 
 ---
 
-## 项目概述
+## 📖 项目概述
 
 MQTT 报文里的每一个属性都流经同一条事务性管道：写入 PostgreSQL、匹配告警规则、经事务性 Outbox 发布到 Kafka；一旦规则触发，诊断 Agent 便会自主调用工具（设备状态、遥测历史、告警历史、设备手册检索）产出根因、置信度与处置建议，并直接回写到告警记录中。
 
@@ -46,7 +50,7 @@ MQTT 报文里的每一个属性都流经同一条事务性管道：写入 Postg
 
 四个阶段均已在本仓库中实现并配有测试 —— 不是规划，是已交付的完整链路。
 
-## 项目背景
+## 🧭 项目背景
 
 工业设备的异常诊断长期依赖人工经验：设备离线、超温、超压等异常发生后，运维人员需要手动翻查历史数据、比对设备手册、判断根因，响应慢且高度依赖个人经验，也无法规模化。
 
@@ -54,7 +58,7 @@ MQTT 报文里的每一个属性都流经同一条事务性管道：写入 Postg
 
 本仓库是整套系统里的**数据与 AI 诊断引擎**；配套的管理后台（RBAC、设备/规则配置界面）由姊妹项目 [spark-iot-agent](../spark-iot-agent) 提供，两者共享同一套 PostgreSQL 表结构。
 
-## 系统架构
+## 🏗️ 系统架构
 
 ```mermaid
 flowchart TB
@@ -85,7 +89,7 @@ flowchart TB
     API --> AR
 ```
 
-## 核心功能
+## ⚙️ 核心功能
 
 | 模块 | 说明 |
 |---|---|
@@ -98,7 +102,7 @@ flowchart TB
 | **RAG 知识库** | 设备手册、SOP、历史故障案例经 Ollama `nomic-embed-text` 编码为 768 维向量存入 pgvector，按余弦距离检索为诊断提供上下文 |
 | **REST 查询接口** | 只读接口，返回最新值、历史数据与近期告警；响应 DTO 与 JPA 实体解耦 |
 
-## 技术栈
+## 🧰 技术栈
 
 | 分类 | 技术 |
 |---|---|
@@ -109,7 +113,7 @@ flowchart TB
 | **可靠性** | 事务性 Outbox 模式 + 定时中继（at-least-once） |
 | **其他** | HiveMQ MQTT Client 1.3.15（异步 API）· Jackson 3.x（`tools.jackson.*`）· Lombok · 雪花 ID 生成器 |
 
-## 数据库设计亮点
+## 🗄️ 数据库设计亮点
 
 本服务读写 `aiot_*` 系列表，Schema 由姊妹项目 `spark-iot-agent`（RBAC 管理后台）统一维护，本服务 `ddl-auto: none`，只读写不建表：
 
@@ -123,7 +127,7 @@ flowchart TB
 
 所有主键均为 `bigint`，由内置雪花算法生成（41 位时间戳 | 10 位机器号 | 12 位序列），不依赖数据库自增。
 
-## 快速开始
+## 🚀 快速开始
 
 ```bash
 # 1. 启动中间件（EMQX / PostgreSQL(pgvector) / Redis / Kafka，
@@ -155,16 +159,16 @@ curl http://localhost:8080/api/alert/recent
 
 更完整的环境搭建（表结构初始化、Redis 键空间通知配置、单测运行方式）见 [`AGENTS.md`](./AGENTS.md) / [`CLAUDE.md`](./CLAUDE.md)。
 
-## 项目截图 / 演示
+## 📸 项目截图 / 演示
 
 > TODO: 添加截图（告警列表、AI 诊断结果展示、RAG 检索命中示例）
 
-## 相关项目
+## 🔗 相关项目
 
 - [spark-iot-agent](../spark-iot-agent) —— 提供设备/产品/告警规则的 RBAC 管理界面，与本服务共享 `aiot_*` 表结构
 - [spark-iot-emulator](../spark-iot-emulator) —— 设备遥测模拟器，向 EMQX 发布 MQTT 遥测消息，用于本地开发与故障场景复现
 
-## 技术亮点
+## 💡 技术亮点
 
 - **事务性 Outbox 消除幽灵数据**：遥测/告警写入与 Outbox 记录同一事务提交，定时中继转发 Kafka，把"DB 回滚但消息已发出"这个经典 at-most-once 缺陷，用一张表 + 一个 `@Scheduled` 方法升级为 at-least-once 语义。
 - **LLM 自主决定诊断策略**：`DiagnosisAgentService` 不是把遥测硬塞进固定 Prompt，而是把 5 个 MCP 工具（设备状态/历史/告警/手册检索）交给模型自主决策调用；诊断置信度低于 80% 时，自动扩大到 120 分钟历史窗口重试一次。
@@ -172,6 +176,6 @@ curl http://localhost:8080/api/alert/recent
 - **数据库级锁替代 JVM 级锁做告警防抖**：去重机制从最初的 JVM 内 `synchronized` 升级为 `pg_advisory_xact_lock`，并用专门的并发测试验证跨线程、跨实例场景下均不产生重复告警。
 - **116 个单元测试覆盖核心链路**：遥测入库、6 种告警运算符、Outbox 中继、诊断置信度分支、MCP 工具映射均有独立测试覆盖，核心链路的改动可在本地秒级验证，无需依赖联调环境。
 
-## 许可证
+## 📄 许可证
 
 本项目基于 [MIT License](./LICENSE) 开源。
