@@ -15,6 +15,8 @@ public interface DeviceRepository extends JpaRepository<Device, Long> {
 
     List<Device> findByDeleted(Short deleted);
 
+    List<Device> findByOnlineStatusAndDeleted(Short onlineStatus, Short deleted);
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE Device d SET d.onlineStatus = 1, d.lastOnlineTime = :time, d.updateTime = :time WHERE d.id = :id")
     void markOnline(Long id, LocalDateTime time);

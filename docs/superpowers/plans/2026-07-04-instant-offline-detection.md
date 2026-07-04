@@ -74,9 +74,9 @@ class DeviceRepositoryTest {
         d.setDeviceName("Test Device " + deviceKey);
         d.setDeviceKey(deviceKey);
         d.setOnlineStatus(onlineStatus);
-        deviceRepository.save(d);
+        Device saved = deviceRepository.save(d);
         insertedIds.add(id);
-        return d;
+        return saved;
     }
 
     @Test
