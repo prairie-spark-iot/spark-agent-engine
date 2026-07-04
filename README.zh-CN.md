@@ -161,7 +161,7 @@ curl http://localhost:8080/api/alert/recent
 
 ## 相关项目
 
-- [spark-iot-agent](../spark-iot-agent) —— 基于 ruoyi-vue-pro（yudao）二次开发的管理后台，提供设备/产品/告警规则的 RBAC 管理界面，与本服务共享 `aiot_*` 表结构
+- [spark-iot-agent](../spark-iot-agent) —— 提供设备/产品/告警规则的 RBAC 管理界面，与本服务共享 `aiot_*` 表结构
 - [spark-iot-emulator](../spark-iot-emulator) —— 设备遥测模拟器，向 EMQX 发布 MQTT 遥测消息，用于本地开发与故障场景复现
 
 ## 技术亮点

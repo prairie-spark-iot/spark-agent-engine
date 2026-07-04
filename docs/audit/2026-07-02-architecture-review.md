@@ -294,7 +294,7 @@ R.fail(msg)   → {code:500, msg:..., data:null}
 R.fail(code, msg) → {code:<code>, msg:..., data:null}
 ```
 
-Consistent shape. The `code:0` convention is a Chinese enterprise convention (Ruoyi ecosystem). No issues here.
+Consistent shape. The `code:0` convention is a Chinese enterprise convention (ecosystem). No issues here.
 
 ---
 

@@ -161,7 +161,7 @@ Full setup details (schema bootstrap, Redis keyspace-notification config, runnin
 
 ## Related Projects
 
-- [spark-iot-agent](../spark-iot-agent) — the RBAC admin console, built on ruoyi-vue-pro (yudao), for managing devices/products/alert rules; shares the `aiot_*` schema with this service
+- [spark-iot-agent](../spark-iot-agent) — the RBAC admin console, for managing devices/products/alert rules; shares the `aiot_*` schema with this service
 - [spark-iot-emulator](../spark-iot-emulator) — a device telemetry emulator that publishes MQTT messages to EMQX, used for local development and fault-scenario reproduction
 
 ## Highlights
