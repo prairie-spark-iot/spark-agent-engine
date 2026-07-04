@@ -43,6 +43,36 @@ public class DeviceHeartbeatService implements MessageListener {
     }
 
     /**
+     * Immediately marks a device offline (bypassing the Redis TTL wait), triggered by an
+     * explicit device/offline/{deviceKey} MQTT event.
+     */
+    @Transactional
+    public void markOfflineNow(String deviceKey) {
+        String key = appProperties.getDeviceHeartbeatKeyPrefix() + deviceKey;
+        redisTemplate.delete(key);
+        deviceRepository.findByDeviceKeyAndDeleted(deviceKey, (short) 0)
+                .ifPresent(device -> {
+                    deviceRepository.markOffline(device.getId(), LocalDateTime.now());
+                    log.info("[Heartbeat] {} went offline (explicit event)", deviceKey);
+                });
+    }
+
+    /**
+     * Marks every currently-online device offline, triggered by the emulator's crash LWT
+     * (device/offline/emulator) — one process death affects every device it was managing.
+     */
+    @Transactional
+    public void markAllOffline() {
+        LocalDateTime now = LocalDateTime.now();
+        deviceRepository.findByOnlineStatusAndDeleted((short) 1, (short) 0)
+                .forEach(device -> {
+                    redisTemplate.delete(appProperties.getDeviceHeartbeatKeyPrefix() + device.getDeviceKey());
+                    deviceRepository.markOffline(device.getId(), now);
+                    log.info("[Heartbeat] {} went offline (emulator crash)", device.getDeviceKey());
+                });
+    }
+
+    /**
      * Invoked by RedisMessageListenerContainer when a device:online:{key} expires.
      * Transitions the device to offline in DB (online→offline state change only).
      */
