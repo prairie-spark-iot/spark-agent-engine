@@ -31,6 +31,12 @@ class AlertRecordResponseTest {
         record.setDiagnosisDetail("detail");
         LocalDateTime diagnosisTime = LocalDateTime.of(2026, 7, 3, 9, 5);
         record.setDiagnosisTime(diagnosisTime);
+        record.setRuleOperator("gt");
+        record.setRuleThreshold("240");
+        LocalDateTime diagnosisRequestedAt = LocalDateTime.of(2026, 7, 3, 8, 59);
+        record.setDiagnosisRequestedAt(diagnosisRequestedAt);
+        LocalDateTime approvedAt = LocalDateTime.of(2026, 7, 3, 9, 10);
+        record.setApprovedAt(approvedAt);
         record.setTenantId(1L);
         record.setDeleted((short) 0);
 
@@ -52,5 +58,9 @@ class AlertRecordResponseTest {
         assertEquals(BigDecimal.valueOf(0.95), response.confidence());
         assertEquals("detail", response.diagnosisDetail());
         assertEquals(diagnosisTime, response.diagnosisTime());
+        assertEquals("gt", response.ruleOperator());
+        assertEquals("240", response.ruleThreshold());
+        assertEquals(diagnosisRequestedAt, response.diagnosisRequestedAt());
+        assertEquals(approvedAt, response.approvedAt());
     }
 }

@@ -1,5 +1,6 @@
 package com.spark.agent.service;
 
+import com.spark.agent.common.ConflictException;
 import com.spark.agent.common.SnowflakeIdGenerator;
 import com.spark.agent.config.AppProperties;
 import com.spark.agent.entity.AlertOperator;
@@ -11,6 +12,7 @@ import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.AlertRuleRepository;
 import com.spark.agent.repository.OutboxMessageRepository;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.Query;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -120,6 +123,24 @@ class AlertServiceTest {
         verify(alertRecordRepository).save(any(AlertRecord.class));
         verify(outboxMessageFactory).build(eq("alert_record"), eq("999"), eq("alert.triggered"), any(AlertRecord.class));
         verify(outboxMessageRepository).save(same(outboxMessage));
+    }
+
+    @Test
+    void evaluate_matchingRule_populatesRuleOperatorAndThreshold() {
+        when(alertRuleRepository.findActiveRules(1L, "temperature")).thenReturn(List.of(sampleRule));
+        when(alertRecordRepository.countRecentUnhandled(eq(1L), eq(100L), any(LocalDateTime.class)))
+                .thenReturn(0L);
+        when(idGenerator.nextId()).thenReturn(999L);
+        when(outboxMessageFactory.build(eq("alert_record"), eq("999"), eq("alert.triggered"), any(AlertRecord.class)))
+                .thenReturn(new OutboxMessage());
+
+        alertService.evaluate(sampleData);
+
+        verify(alertRecordRepository).save(argThat(record -> {
+            assertEquals("gt", record.getRuleOperator());
+            assertEquals("100", record.getRuleThreshold());
+            return true;
+        }));
     }
 
     @Test
@@ -229,5 +250,127 @@ class AlertServiceTest {
 
         verify(alertRecordRepository).save(any(AlertRecord.class));
         verify(outboxMessageRepository).save(same(outboxMessage));
+    }
+
+    // ---- requestDiagnosis() ----
+
+    @Test
+    void requestDiagnosis_alertNotFound_throwsEntityNotFound() {
+        when(alertRecordRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(EntityNotFoundException.class, () -> alertService.requestDiagnosis(999L));
+    }
+
+    @Test
+    void requestDiagnosis_pendingAlert_setsRequestedAtAndPublishesOutboxRow() {
+        AlertRecord record = new AlertRecord();
+        record.setId(42L);
+        record.setDiagnosisStatus((short) 0);
+        when(alertRecordRepository.findById(42L)).thenReturn(Optional.of(record));
+        OutboxMessage outboxMessage = new OutboxMessage();
+        when(outboxMessageFactory.build(eq("alert_record"), eq("42"), eq("alert.triggered"), same(record)))
+                .thenReturn(outboxMessage);
+
+        AlertRecord result = alertService.requestDiagnosis(42L);
+
+        assertNotNull(result.getDiagnosisRequestedAt());
+        verify(alertRecordRepository).save(record);
+        verify(outboxMessageRepository).save(same(outboxMessage));
+    }
+
+    @Test
+    void requestDiagnosis_alreadyRequested_throwsConflict() {
+        AlertRecord record = new AlertRecord();
+        record.setId(42L);
+        record.setDiagnosisStatus((short) 0);
+        record.setDiagnosisRequestedAt(LocalDateTime.now());
+        when(alertRecordRepository.findById(42L)).thenReturn(Optional.of(record));
+
+        assertThrows(ConflictException.class, () -> alertService.requestDiagnosis(42L));
+        verify(alertRecordRepository, never()).save(any());
+        verify(outboxMessageRepository, never()).save(any());
+    }
+
+    @Test
+    void requestDiagnosis_alreadyDiagnosed_throwsConflict() {
+        AlertRecord record = new AlertRecord();
+        record.setId(42L);
+        record.setDiagnosisStatus((short) 2);
+        when(alertRecordRepository.findById(42L)).thenReturn(Optional.of(record));
+
+        assertThrows(ConflictException.class, () -> alertService.requestDiagnosis(42L));
+    }
+
+    @Test
+    void requestDiagnosis_humanReviewRequired_throwsConflict() {
+        AlertRecord record = new AlertRecord();
+        record.setId(42L);
+        record.setDiagnosisStatus((short) 1);
+        when(alertRecordRepository.findById(42L)).thenReturn(Optional.of(record));
+
+        assertThrows(ConflictException.class, () -> alertService.requestDiagnosis(42L));
+    }
+
+    // ---- approveAlert() ----
+
+    @Test
+    void approveAlert_alertNotFound_throwsEntityNotFound() {
+        when(alertRecordRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(EntityNotFoundException.class, () -> alertService.approveAlert(999L));
+    }
+
+    @Test
+    void approveAlert_stillPending_throwsConflict() {
+        AlertRecord record = new AlertRecord();
+        record.setId(42L);
+        record.setDiagnosisStatus((short) 0);
+        when(alertRecordRepository.findById(42L)).thenReturn(Optional.of(record));
+
+        assertThrows(ConflictException.class, () -> alertService.approveAlert(42L));
+        verify(alertRecordRepository, never()).save(any());
+    }
+
+    @Test
+    void approveAlert_diagnosed_setsHandleStatusAndApprovedAt() {
+        AlertRecord record = new AlertRecord();
+        record.setId(42L);
+        record.setDiagnosisStatus((short) 2);
+        record.setHandleStatus((short) 0);
+        when(alertRecordRepository.findById(42L)).thenReturn(Optional.of(record));
+
+        AlertRecord result = alertService.approveAlert(42L);
+
+        assertEquals((short) 1, result.getHandleStatus());
+        assertNotNull(result.getApprovedAt());
+        verify(alertRecordRepository).save(record);
+    }
+
+    @Test
+    void approveAlert_humanReviewRequired_alsoApprovable() {
+        AlertRecord record = new AlertRecord();
+        record.setId(42L);
+        record.setDiagnosisStatus((short) 1);
+        when(alertRecordRepository.findById(42L)).thenReturn(Optional.of(record));
+
+        AlertRecord result = alertService.approveAlert(42L);
+
+        assertEquals((short) 1, result.getHandleStatus());
+    }
+
+    @Test
+    void approveAlert_calledTwice_isIdempotentAndKeepsFirstApprovedAtTimestamp() {
+        AlertRecord record = new AlertRecord();
+        record.setId(42L);
+        record.setDiagnosisStatus((short) 2);
+        when(alertRecordRepository.findById(42L)).thenReturn(Optional.of(record));
+
+        AlertRecord first = alertService.approveAlert(42L);
+        LocalDateTime firstApprovedAt = first.getApprovedAt();
+
+        AlertRecord second = alertService.approveAlert(42L);
+
+        assertEquals((short) 1, second.getHandleStatus());
+        assertEquals(firstApprovedAt, second.getApprovedAt());
     }
 }

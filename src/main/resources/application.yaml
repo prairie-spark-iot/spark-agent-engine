@@ -93,9 +93,9 @@ spring:
     ollama:
       base-url: http://localhost:11434
       embedding:
-        model: nomic-embed-text
+        model: qwen3-embedding:0.6b
       chat:
-        model: qwen2.5:7b
+        model: qwen3.5:4b
     mcp:
       server:
         name: spark-agent-engine-mcp

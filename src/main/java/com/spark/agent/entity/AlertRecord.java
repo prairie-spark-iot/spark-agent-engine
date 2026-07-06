@@ -32,6 +32,14 @@ public class AlertRecord extends BaseEntity {
     @Column(name = "trigger_value")
     private String triggerValue;
 
+    /** denormalized copy of the matched AlertRule's operator at trigger time — see sql/2026-07-06-alert-record-diagnose-columns.sql */
+    @Column(name = "rule_operator")
+    private String ruleOperator;
+
+    /** denormalized copy of the matched AlertRule's threshold at trigger time — see sql/2026-07-06-alert-record-diagnose-columns.sql */
+    @Column(name = "rule_threshold")
+    private String ruleThreshold;
+
     /** 1=info 2=warning 3=critical */
     @Column(name = "level", nullable = false)
     private Short level = 1;
@@ -65,4 +73,12 @@ public class AlertRecord extends BaseEntity {
 
     @Column(name = "diagnosis_time")
     private LocalDateTime diagnosisTime;
+
+    /** set when an on-demand diagnosis is requested via POST /api/alerts/{id}/diagnose; drives the transient "Diagnosing" state */
+    @Column(name = "diagnosis_requested_at")
+    private LocalDateTime diagnosisRequestedAt;
+
+    /** set the first time POST /api/alerts/{id}/approve succeeds — see sql/2026-07-06-alert-record-approved-at.sql */
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
 }

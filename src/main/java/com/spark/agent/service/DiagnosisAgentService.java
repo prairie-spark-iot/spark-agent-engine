@@ -12,9 +12,11 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -32,6 +34,7 @@ public class DiagnosisAgentService {
     private final ToolCallbackProvider deviceToolCallbacks;
     private final AppProperties appProperties;
     private final DiagnosisPromptBuilder promptBuilder;
+    private final ObjectMapper objectMapper;
 
     private ChatClient chatClient;
 
@@ -84,7 +87,7 @@ public class DiagnosisAgentService {
             }).orTimeout(appProperties.getDiagnosisTimeoutSeconds(), TimeUnit.SECONDS).join();
         } catch (Exception e) {
             log.error("[Diagnosis] LLM inference failed or timed out: {}", e.getMessage());
-            return new DiagnosisResult("", "", 0, "Inference failed: " + e.getMessage());
+            return new DiagnosisResult("", "Inference failed: " + e.getMessage(), 0, List.of(), List.of());
         }
     }
 
@@ -93,7 +96,7 @@ public class DiagnosisAgentService {
         record.setRootCause(result.rootCause());
         record.setSuggestion(result.suggestion());
         record.setConfidence(BigDecimal.valueOf(result.confidence()));
-        record.setDiagnosisDetail(result.diagnosisDetail());
+        record.setDiagnosisDetail(serializeDiagnosisDetail(result));
         record.setDiagnosisStatus(autoDiagnosed ? STATUS_DIAGNOSED : STATUS_HUMAN_REVIEW_REQUIRED);
         record.setDiagnosisTime(LocalDateTime.now());
         record.setDeleted((short) 0); // a diagnosis writeback must never leave the record logically deleted
@@ -101,5 +104,20 @@ public class DiagnosisAgentService {
 
         log.info("[Diagnosis] alert={} status={} confidence={}", record.getId(),
                 autoDiagnosed ? "AUTO_DIAGNOSED" : "HUMAN_REVIEW_REQUIRED", result.confidence());
+    }
+
+    /**
+     * aiot_alert_record.diagnosis_detail stays a plain TEXT column; what changes is its
+     * contents — structured JSON ({@code {"timeline": [...], "suggestedActionPlan": [...]}})
+     * instead of a free-text narrative, so the BFF/frontend can render a real timeline and
+     * checklist instead of parsing prose. See spark-agent-docs/phase-1-2-api-data-contracts.md.
+     */
+    private String serializeDiagnosisDetail(DiagnosisResult result) {
+        return objectMapper.writeValueAsString(new DiagnosisDetailPayload(result.timeline(), result.suggestedActionPlan()));
+    }
+
+    private record DiagnosisDetailPayload(
+            List<DiagnosisResult.TimelineStep> timeline,
+            List<DiagnosisResult.ActionItem> suggestedActionPlan) {
     }
 }

@@ -12,9 +12,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallbackProvider;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -36,6 +38,7 @@ class DiagnosisAgentServiceTest {
     @Mock
     private ToolCallbackProvider deviceToolCallbacks;
     private AppProperties appProperties;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private DiagnosisAgentService service;
     private DiagnosisPromptBuilder promptBuilder;
@@ -47,7 +50,7 @@ class DiagnosisAgentServiceTest {
         appProperties = new AppProperties();
         promptBuilder = new DiagnosisPromptBuilder();
         service = new DiagnosisAgentService(alertRecordRepository, chatClientBuilder,
-                deviceToolCallbacks, appProperties, promptBuilder);
+                deviceToolCallbacks, appProperties, promptBuilder, objectMapper);
 
         when(chatClientBuilder.build()).thenReturn(chatClient);
         service.init();
@@ -81,14 +84,14 @@ class DiagnosisAgentServiceTest {
         DiagnosisResult result = service.diagnose(100L);
 
         assertEquals(0, result.confidence());
-        assertTrue(result.diagnosisDetail().contains("Inference failed"));
+        assertTrue(result.suggestion().contains("Inference failed"));
     }
 
     @Test
     void diagnose_usesToolCallbacks() {
         when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
 
-        DiagnosisResult llmResult = new DiagnosisResult("root cause", "fix suggestion", 95, "detailed analysis");
+        DiagnosisResult llmResult = new DiagnosisResult("root cause", "fix suggestion", 95, List.of(), List.of());
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
         when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(llmResult);
@@ -103,7 +106,7 @@ class DiagnosisAgentServiceTest {
         when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
 
         DiagnosisResult llmResult = new DiagnosisResult(
-                "root cause", "fix suggestion", 95, "detailed analysis");
+                "root cause", "fix suggestion", 95, List.of(), List.of());
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
         when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(llmResult);
@@ -128,7 +131,7 @@ class DiagnosisAgentServiceTest {
     void diagnose_lowConfidence_writesHumanReviewStatus() {
         when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
 
-        DiagnosisResult lowConfResult = new DiagnosisResult("guess", "maybe", 35, "low confidence");
+        DiagnosisResult lowConfResult = new DiagnosisResult("guess", "maybe", 35, List.of(), List.of());
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
         when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(lowConfResult);
@@ -143,7 +146,7 @@ class DiagnosisAgentServiceTest {
     void diagnose_highConfidence_doesNotRetry() {
         when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
 
-        DiagnosisResult llmResult = new DiagnosisResult("root cause", "fix suggestion", 95, "detailed analysis");
+        DiagnosisResult llmResult = new DiagnosisResult("root cause", "fix suggestion", 95, List.of(), List.of());
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
         when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(llmResult);
@@ -157,7 +160,7 @@ class DiagnosisAgentServiceTest {
     void diagnose_lowConfidence_retriesOnceWithWiderWindow() {
         when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
 
-        DiagnosisResult lowConfResult = new DiagnosisResult("guess", "maybe", 35, "low confidence");
+        DiagnosisResult lowConfResult = new DiagnosisResult("guess", "maybe", 35, List.of(), List.of());
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
         when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(lowConfResult);
@@ -172,8 +175,8 @@ class DiagnosisAgentServiceTest {
     void diagnose_retryProducesHigherConfidence_writesBackRetryResult() {
         when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
 
-        DiagnosisResult firstResult = new DiagnosisResult("guess", "maybe", 35, "low confidence");
-        DiagnosisResult retryResult = new DiagnosisResult("confirmed cause", "clear fix", 70, "wider-window analysis");
+        DiagnosisResult firstResult = new DiagnosisResult("guess", "maybe", 35, List.of(), List.of());
+        DiagnosisResult retryResult = new DiagnosisResult("confirmed cause", "clear fix", 70, List.of(), List.of());
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
         when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(firstResult, retryResult);
@@ -190,8 +193,8 @@ class DiagnosisAgentServiceTest {
     void diagnose_retryDoesNotImprove_keepsFirstResult() {
         when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
 
-        DiagnosisResult firstResult = new DiagnosisResult("first cause", "first fix", 35, "first analysis");
-        DiagnosisResult retryResult = new DiagnosisResult("retry cause", "retry fix", 20, "retry analysis");
+        DiagnosisResult firstResult = new DiagnosisResult("first cause", "first fix", 35, List.of(), List.of());
+        DiagnosisResult retryResult = new DiagnosisResult("retry cause", "retry fix", 20, List.of(), List.of());
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
         when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(firstResult, retryResult);
@@ -206,7 +209,7 @@ class DiagnosisAgentServiceTest {
     void diagnose_writeBack_clearsDeletedFlag() {
         when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
 
-        DiagnosisResult goodResult = new DiagnosisResult("cause", "fix", 90, "detail");
+        DiagnosisResult goodResult = new DiagnosisResult("cause", "fix", 90, List.of(), List.of());
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callResponseSpec);
         when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(goodResult);
@@ -215,5 +218,28 @@ class DiagnosisAgentServiceTest {
 
         verify(alertRecordRepository).save(argThat(record ->
                 record.getDeleted() == 0));
+    }
+
+    @Test
+    void diagnose_writeBack_serializesTimelineAndActionPlanIntoDiagnosisDetail() {
+        when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
+
+        DiagnosisResult result = new DiagnosisResult(
+                "root cause", "fix suggestion", 90,
+                List.of(new DiagnosisResult.TimelineStep("Anomaly detected", "Temperature exceeded threshold")),
+                List.of(new DiagnosisResult.ActionItem("Inspect coolant flow at circuit B")));
+        when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.call()).thenReturn(callResponseSpec);
+        when(callResponseSpec.entity(DiagnosisResult.class)).thenReturn(result);
+
+        service.diagnose(100L);
+
+        verify(alertRecordRepository).save(argThat(record -> {
+            String detail = record.getDiagnosisDetail();
+            assertTrue(detail.contains("Anomaly detected"));
+            assertTrue(detail.contains("Temperature exceeded threshold"));
+            assertTrue(detail.contains("Inspect coolant flow at circuit B"));
+            return true;
+        }));
     }
 }

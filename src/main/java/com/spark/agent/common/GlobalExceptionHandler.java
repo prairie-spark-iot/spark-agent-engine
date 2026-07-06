@@ -22,6 +22,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
     }
 
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<R<Void>> handleConflict(ConflictException ex) {
+        log.warn("[API] Conflict: {}", ex.getMessage());
+        R<Void> body = new R<>(409, ex.getMessage(), null);
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<R<Void>> handleBadRequest(IllegalArgumentException ex) {
         log.warn("[API] Bad request: {}", ex.getMessage());

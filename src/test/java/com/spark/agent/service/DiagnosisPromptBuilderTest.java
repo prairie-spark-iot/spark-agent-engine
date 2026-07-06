@@ -70,6 +70,7 @@ class DiagnosisPromptBuilderTest {
         assertTrue(prompt.contains("rootCause"));
         assertTrue(prompt.contains("suggestion"));
         assertTrue(prompt.contains("confidence"));
-        assertTrue(prompt.contains("diagnosisDetail"));
+        assertTrue(prompt.contains("timeline"));
+        assertTrue(prompt.contains("suggestedActionPlan"));
     }
 }

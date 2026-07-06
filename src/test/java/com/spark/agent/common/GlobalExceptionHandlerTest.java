@@ -112,6 +112,17 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void handleConflict_returns409() {
+        ConflictException ex = new ConflictException("Alert 42 is already Diagnosing or Diagnosed");
+
+        ResponseEntity<R<Void>> resp = handler.handleConflict(ex);
+
+        assertEquals(HttpStatus.CONFLICT, resp.getStatusCode());
+        assertEquals(409, resp.getBody().getCode());
+        assertEquals("Alert 42 is already Diagnosing or Diagnosed", resp.getBody().getMsg());
+    }
+
+    @Test
     void handleGeneral_returns500() {
         Exception ex = new RuntimeException("Unexpected error");
 

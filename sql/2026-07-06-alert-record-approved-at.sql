@@ -1,0 +1,16 @@
+-- Supports Phase 4/5 of the integration (see
+-- spark-agent-docs/frontend-backend-integration-strategy.md): wiring the frontend's
+-- "Approve Action Plan" button to POST /api/alerts/{id}/approve.
+--
+-- approved_at: set the first time an alert is approved (AlertService.approveAlert()).
+-- There is deliberately NO new "approved" boolean column — handle_status (0=unhandled,
+-- 1=handled) already exists and is reused as the approved signal (frontend's
+-- diagnosis.approved is derived from handleStatus === 1 in alertAdapter.ts) to avoid two
+-- booleans that could drift out of sync. approved_at is the one genuinely new piece of
+-- information: handle_status alone can't say *when* approval happened.
+--
+-- Schema is managed manually in this project (spring.jpa.hibernate.ddl-auto: none,
+-- no migration tooling) — this file is the tracked record of that manual change.
+-- Apply manually to any environment; DDL execution against aiot_* is owned by
+-- spark-iot-agent per this workspace's ownership rule, this repo only tracks the change.
+ALTER TABLE aiot_alert_record ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP;

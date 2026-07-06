@@ -21,7 +21,11 @@ public record AlertRecordResponse(
         String suggestion,
         BigDecimal confidence,
         String diagnosisDetail,
-        LocalDateTime diagnosisTime
+        LocalDateTime diagnosisTime,
+        String ruleOperator,
+        String ruleThreshold,
+        LocalDateTime diagnosisRequestedAt,
+        LocalDateTime approvedAt
 ) {
     public static AlertRecordResponse from(AlertRecord record) {
         return new AlertRecordResponse(
@@ -40,7 +44,11 @@ public record AlertRecordResponse(
                 record.getSuggestion(),
                 record.getConfidence(),
                 record.getDiagnosisDetail(),
-                record.getDiagnosisTime()
+                record.getDiagnosisTime(),
+                record.getRuleOperator(),
+                record.getRuleThreshold(),
+                record.getDiagnosisRequestedAt(),
+                record.getApprovedAt()
         );
     }
 }

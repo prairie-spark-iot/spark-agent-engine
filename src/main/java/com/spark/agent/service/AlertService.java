@@ -1,5 +1,6 @@
 package com.spark.agent.service;
 
+import com.spark.agent.common.ConflictException;
 import com.spark.agent.common.SnowflakeIdGenerator;
 import com.spark.agent.config.AppProperties;
 import com.spark.agent.entity.AlertRecord;
@@ -10,6 +11,7 @@ import com.spark.agent.repository.AlertRecordRepository;
 import com.spark.agent.repository.AlertRuleRepository;
 import com.spark.agent.repository.OutboxMessageRepository;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -121,6 +123,57 @@ public class AlertService {
         return alertRecordRepository.countRecentUnhandled(deviceId, ruleId, since) > 0;
     }
 
+    private static final short DIAGNOSIS_STATUS_PENDING = 0;
+
+    /**
+     * Handles POST /api/alerts/{id}/diagnose. Deliberately does NOT call the LLM directly —
+     * Ollama's inference slot is already serialized to concurrency=1 via the
+     * iot.alert.triggered consumer (AlertTriggeredConsumer, groupId=diagnosis-agent), so an
+     * on-demand trigger must go through the same queue rather than around it. This method only
+     * flips diagnosis_requested_at and drops a message on the existing outbox/Kafka pipeline;
+     * the consumer picks it up whenever the single Ollama slot is free. See
+     * spark-agent-docs/phase-1-2-api-data-contracts.md §3.
+     */
+    @Transactional
+    public AlertRecord requestDiagnosis(Long alertId) {
+        AlertRecord record = alertRecordRepository.findById(alertId)
+                .orElseThrow(() -> new EntityNotFoundException("AlertRecord " + alertId + " not found"));
+
+        if (record.getDiagnosisRequestedAt() != null || record.getDiagnosisStatus() != DIAGNOSIS_STATUS_PENDING) {
+            throw new ConflictException("Alert " + alertId + " is already Diagnosing or Diagnosed");
+        }
+
+        record.setDiagnosisRequestedAt(LocalDateTime.now());
+        alertRecordRepository.save(record);
+        outboxMessageRepository.save(
+                outboxMessageFactory.build("alert_record", String.valueOf(record.getId()), "alert.triggered", record));
+        return record;
+    }
+
+    /**
+     * Handles POST /api/alerts/{id}/approve. Reuses handle_status (0=unhandled, 1=handled)
+     * as the "approved" signal rather than adding a separate boolean column — the frontend's
+     * diagnosis.approved is derived from handleStatus === 1 (alertAdapter.ts). Idempotent: a
+     * second call just re-confirms handleStatus=1 without overwriting the first approved_at,
+     * since re-approving shouldn't erase when it was actually first approved.
+     */
+    @Transactional
+    public AlertRecord approveAlert(Long alertId) {
+        AlertRecord record = alertRecordRepository.findById(alertId)
+                .orElseThrow(() -> new EntityNotFoundException("AlertRecord " + alertId + " not found"));
+
+        if (record.getDiagnosisStatus() == DIAGNOSIS_STATUS_PENDING) {
+            throw new ConflictException("Alert " + alertId + " has not been diagnosed yet");
+        }
+
+        record.setHandleStatus((short) 1);
+        if (record.getApprovedAt() == null) {
+            record.setApprovedAt(LocalDateTime.now());
+        }
+        alertRecordRepository.save(record);
+        return record;
+    }
+
     private AlertRecord buildRecord(DeviceData data, AlertRule rule, double value) {
         AlertRecord r = new AlertRecord();
         r.setId(idGenerator.nextId());
@@ -130,6 +183,8 @@ public class AlertService {
         r.setIdentifier(data.getIdentifier());
         r.setTriggerValue(String.valueOf(value));
         r.setLevel(rule.getLevel());
+        r.setRuleOperator(rule.getOperator().code());
+        r.setRuleThreshold(rule.getThreshold());
         r.setAlertContent(String.format("设备 %s 属性 %s 当前值 %s 触发规则「%s」(阈值: %s %s)",
                 data.getDeviceKey(), data.getIdentifier(), data.getValue(),
                 rule.getName(), rule.getOperator().code(), rule.getThreshold()));

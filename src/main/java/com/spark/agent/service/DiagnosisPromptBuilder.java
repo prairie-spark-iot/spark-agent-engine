@@ -28,8 +28,11 @@ public class DiagnosisPromptBuilder {
     private static final String STRUCTURE_SYSTEM_PROMPT = """
             Extract the diagnosis below into the required structured fields: rootCause (concise
             root cause), suggestion (concrete, actionable remediation), confidence (integer 0-100
-            reflecting how certain the diagnosis is), diagnosisDetail (the full diagnosis
-            narrative). Do not invent information beyond what's in the diagnosis.
+            reflecting how certain the diagnosis is), timeline (an ordered list of investigation
+            steps that led to this diagnosis, each with a short title and a one-sentence
+            description), suggestedActionPlan (an ordered list of concrete remediation steps,
+            each a short actionable sentence). Do not invent information beyond what's in the
+            diagnosis.
             """;
 
     public String systemPrompt() {
