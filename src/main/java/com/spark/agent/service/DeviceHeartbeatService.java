@@ -27,6 +27,7 @@ public class DeviceHeartbeatService implements MessageListener {
      * Called on every MQTT message. Writes to DB only on offline→online transition
      * (when Redis key was absent); otherwise just refreshes the key TTL.
      */
+    @Transactional
     public void heartbeat(Long deviceId, String deviceKey) {
         String key = appProperties.getDeviceHeartbeatKeyPrefix() + deviceKey;
         Duration ttl = Duration.ofSeconds(appProperties.getDeviceHeartbeatTtlSeconds());
