@@ -13,7 +13,7 @@
 ![Kafka](https://img.shields.io/badge/Kafka-4.x-231F20?logo=apachekafka&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
 ![MQTT](https://img.shields.io/badge/MQTT-5.0-660066?logo=mqtt&logoColor=white)
-![Ollama](https://img.shields.io/badge/Ollama-qwen2.5%20%7C%20nomic--embed--text-000000?logo=ollama&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-qwen3.5%3A4b%20%7C%20qwen3--embedding%3A0.6b-000000?logo=ollama&logoColor=white)
 
 [English](./README.md) · **简体中文**
 
@@ -78,7 +78,7 @@ flowchart TB
         RELAY --> KAFKA{{"Kafka"}}
         KAFKA --> CONSUMER["AlertTriggeredConsumer"]
         CONSUMER --> DIAG["DiagnosisAgentService"]
-        DIAG <-->|"对话 + 工具调用"| LLM["Ollama<br/>qwen2.5:7b"]
+        DIAG <-->|"对话 + 工具调用"| LLM["Ollama<br/>qwen3.5:4b"]
         DIAG --> MCP["MCP 工具<br/>(DeviceMcpToolService)"]
         MCP --> RAGS["RagSearchService"]
         RAGS <-->|"余弦距离 <->"| VEC[("aiot_knowledge<br/>pgvector · HNSW")]
@@ -99,7 +99,7 @@ flowchart TB
 | **事务性 Outbox** | 遥测与告警写入与 Outbox 记录同事务提交，定时中继按 at-least-once 语义转发 Kafka —— 彻底消除"DB 回滚但 Kafka 已发出"的幽灵数据问题 |
 | **AI 根因诊断** | `DiagnosisAgentService`（Spring AI + Ollama）让 LLM 自主决定调用哪些工具后再作答；置信度不足时自动扩大历史时间窗口重试一次 |
 | **MCP 工具服务** | `DeviceMcpToolService` 暴露 5 个 `@Tool` 方法（设备列表/状态/历史/告警/手册检索），供诊断 Agent 及任意外部 MCP 客户端调用 |
-| **RAG 知识库** | 设备手册、SOP、历史故障案例经 Ollama `nomic-embed-text` 编码为 768 维向量存入 pgvector，按余弦距离检索为诊断提供上下文 |
+| **RAG 知识库** | 设备手册、SOP、历史故障案例经 Ollama `qwen3-embedding:0.6b` 编码为 1024 维向量存入 pgvector，按余弦距离检索为诊断提供上下文 |
 | **REST 查询接口** | 只读接口，返回最新值、历史数据与近期告警；响应 DTO 与 JPA 实体解耦 |
 
 ## 🧰 技术栈
@@ -108,7 +108,7 @@ flowchart TB
 |---|---|
 | **后端** | Java 25 · Spring Boot 4.1.0 · Spring Framework 7 · Hibernate 7.4 · Gradle 9.5 |
 | **数据库** | PostgreSQL（`pgvector` 扩展，HNSW 索引）· Spring Data JPA |
-| **AI / LLM** | Spring AI 2.0 · Ollama（`qwen2.5:7b` 推理 / `nomic-embed-text` 向量化）· MCP Server（STREAMABLE 协议） |
+| **AI / LLM** | Spring AI 2.0 · Ollama（`qwen3.5:4b` 推理 / `qwen3-embedding:0.6b` 向量化）· MCP Server（STREAMABLE 协议） |
 | **中间件** | EMQX（MQTT 5.0）· Apache Kafka 4.x（Spring for Apache Kafka）· Redis 7（心跳 + 键空间通知） |
 | **可靠性** | 事务性 Outbox 模式 + 定时中继（at-least-once） |
 | **其他** | HiveMQ MQTT Client 1.3.15（异步 API）· Jackson 3.x（`tools.jackson.*`）· Lombok · 雪花 ID 生成器 |
@@ -122,7 +122,7 @@ flowchart TB
 | `aiot_device` / `aiot_product` | 设备-产品关联；`online_status` 仅在真正的离线↔在线状态转换时更新，而非每次心跳都写库 |
 | `aiot_device_data` | 遥测明细表，`value`（文本）+ `value_num`（`numeric(20,4)`）双列存储；`(device_key, identifier, report_time DESC) WHERE deleted=0` 复合索引把 8 万行的全表扫描从约 68 秒降到约 200 毫秒；`findLatestByDeviceKey` 用 `ROW_NUMBER() OVER (PARTITION BY identifier)` 窗口函数替代关联子查询 |
 | `aiot_alert_rule` / `aiot_alert_record` | `threshold` 以 VARCHAR 存储、运行时解析；专用防抖索引 `(device_id, rule_id, trigger_time DESC) WHERE handle_status=0` 支撑每条遥测消息都会触发的热路径查询；`diagnosis_status/root_cause/suggestion/confidence` 字段为 AI 诊断回写预留 |
-| `aiot_knowledge` | **RAG 向量表** —— `embedding vector(768)` 存储 `nomic-embed-text` 生成的语义向量，`USING hnsw (embedding vector_cosine_ops)` 索引支撑近似最近邻检索；`device_model`/`product_id` 字段支持"先按设备型号收窄范围、再做向量检索"的组合过滤 |
+| `aiot_knowledge` | **RAG 向量表** —— `embedding vector(1024)` 存储 `qwen3-embedding:0.6b` 生成的语义向量，`USING hnsw (embedding vector_cosine_ops)` 索引支撑近似最近邻检索；`device_model`/`product_id` 字段支持"先按设备型号收窄范围、再做向量检索"的组合过滤 |
 | `aiot_outbox`（本服务自有） | 事务性 Outbox 落地表；部分索引 `(created_at) WHERE published_at IS NULL` 让"待发布消息"查询保持高效；每日定时任务清理超出保留期的已发布记录 |
 
 所有主键均为 `bigint`，由内置雪花算法生成（41 位时间戳 | 10 位机器号 | 12 位序列），不依赖数据库自增。
@@ -135,8 +135,8 @@ flowchart TB
 cd ../spark-ai-infra && docker compose up -d
 
 # 2. 本机启动 Ollama 并拉取本服务用到的模型
-ollama pull qwen2.5:7b
-ollama pull nomic-embed-text
+ollama pull qwen3.5:4b
+ollama pull qwen3-embedding:0.6b
 
 # 3. 启动本服务（默认端口 8080）
 ./gradlew bootRun
@@ -172,7 +172,7 @@ curl http://localhost:8080/api/alert/recent
 
 - **事务性 Outbox 消除幽灵数据**：遥测/告警写入与 Outbox 记录同一事务提交，定时中继转发 Kafka，把"DB 回滚但消息已发出"这个经典 at-most-once 缺陷，用一张表 + 一个 `@Scheduled` 方法升级为 at-least-once 语义。
 - **LLM 自主决定诊断策略**：`DiagnosisAgentService` 不是把遥测硬塞进固定 Prompt，而是把 5 个 MCP 工具（设备状态/历史/告警/手册检索）交给模型自主决策调用；诊断置信度低于 80% 时，自动扩大到 120 分钟历史窗口重试一次。
-- **pgvector + HNSW 实现毫秒级语义检索**：设备手册与故障案例被编码为 768 维向量并建立 HNSW 索引，配合 `device_model` 元数据过滤，让 RAG 检索用近似最近邻取代传统全文检索，响应稳定在亚秒级。
+- **pgvector + HNSW 实现毫秒级语义检索**：设备手册与故障案例被编码为 1024 维向量并建立 HNSW 索引，配合 `device_model` 元数据过滤，让 RAG 检索用近似最近邻取代传统全文检索，响应稳定在亚秒级。
 - **数据库级锁替代 JVM 级锁做告警防抖**：去重机制从最初的 JVM 内 `synchronized` 升级为 `pg_advisory_xact_lock`，并用专门的并发测试验证跨线程、跨实例场景下均不产生重复告警。
 - **116 个单元测试覆盖核心链路**：遥测入库、6 种告警运算符、Outbox 中继、诊断置信度分支、MCP 工具映射均有独立测试覆盖，核心链路的改动可在本地秒级验证，无需依赖联调环境。
 

@@ -13,7 +13,7 @@ One Spring Boot 4 / Java 25 service — from MQTT packet to LLM diagnosis, with 
 ![Kafka](https://img.shields.io/badge/Kafka-4.x-231F20?logo=apachekafka&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
 ![MQTT](https://img.shields.io/badge/MQTT-5.0-660066?logo=mqtt&logoColor=white)
-![Ollama](https://img.shields.io/badge/Ollama-qwen2.5%20%7C%20nomic--embed--text-000000?logo=ollama&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-qwen3.5%3A4b%20%7C%20qwen3--embedding%3A0.6b-000000?logo=ollama&logoColor=white)
 
 **English** · [简体中文](./README.zh-CN.md)
 
@@ -78,7 +78,7 @@ flowchart TB
         RELAY --> KAFKA{{"Kafka"}}
         KAFKA --> CONSUMER["AlertTriggeredConsumer"]
         CONSUMER --> DIAG["DiagnosisAgentService"]
-        DIAG <-->|"chat + tool-calling"| LLM["Ollama<br/>qwen2.5:7b"]
+        DIAG <-->|"chat + tool-calling"| LLM["Ollama<br/>qwen3.5:4b"]
         DIAG --> MCP["MCP Tools<br/>(DeviceMcpToolService)"]
         MCP --> RAGS["RagSearchService"]
         RAGS <-->|"cosine distance <->"| VEC[("aiot_knowledge<br/>pgvector · HNSW")]
@@ -99,7 +99,7 @@ flowchart TB
 | **Transactional outbox** | Telemetry and alert writes commit in the same transaction as their outbox row; a scheduled relay publishes to Kafka at-least-once — no more "DB rolled back but Kafka already saw it" |
 | **AI root-cause diagnosis** | `DiagnosisAgentService` (Spring AI + Ollama) lets the LLM decide which tools to call before answering; low-confidence results trigger one retry with a widened history window |
 | **MCP tool server** | `DeviceMcpToolService` exposes 5 `@Tool` methods — device list/status/history/alerts/manual search — usable by the diagnosis agent or any external MCP client |
-| **RAG knowledge base** | Device manuals / SOPs / past incident write-ups are embedded with Ollama's `nomic-embed-text` (768-d) into pgvector, retrieved by cosine distance for diagnosis context |
+| **RAG knowledge base** | Device manuals / SOPs / past incident write-ups are embedded with Ollama's `qwen3-embedding:0.6b` (1024-d) into pgvector, retrieved by cosine distance for diagnosis context |
 | **REST query API** | Read-only endpoints for latest values, history, and recent alerts; response DTOs decoupled from JPA entities |
 
 ## 🧰 Tech Stack
@@ -108,7 +108,7 @@ flowchart TB
 |---|---|
 | **Backend** | Java 25 · Spring Boot 4.1.0 · Spring Framework 7 · Hibernate 7.4 · Gradle 9.5 |
 | **Database** | PostgreSQL with the `pgvector` extension (HNSW index) · Spring Data JPA |
-| **AI / LLM** | Spring AI 2.0 · Ollama (`qwen2.5:7b` for chat, `nomic-embed-text` for embeddings) · MCP server (STREAMABLE protocol) |
+| **AI / LLM** | Spring AI 2.0 · Ollama (`qwen3.5:4b` for chat, `qwen3-embedding:0.6b` for embeddings) · MCP server (STREAMABLE protocol) |
 | **Middleware** | EMQX (MQTT 5.0) · Apache Kafka 4.x (Spring for Apache Kafka) · Redis 7 (heartbeat + keyspace notifications) |
 | **Reliability** | Transactional outbox pattern with a scheduled relay (at-least-once delivery) |
 | **Misc.** | HiveMQ MQTT Client 1.3.15 (async API) · Jackson 3.x (`tools.jackson.*`) · Lombok · Snowflake ID generator |
@@ -122,7 +122,7 @@ This service reads and writes the `aiot_*` tables; the schema itself is owned by
 | `aiot_device` / `aiot_product` | Device-product association; `online_status` only flips on an actual offline↔online transition, not on every heartbeat |
 | `aiot_device_data` | Telemetry rows — dual-column storage (`value` text + `value_num numeric(20,4)`); a composite index on `(device_key, identifier, report_time DESC) WHERE deleted=0` cut a full scan from ~68s to ~200ms at 80k rows; `findLatestByDeviceKey` uses a `ROW_NUMBER() OVER (PARTITION BY identifier)` window function instead of a correlated subquery |
 | `aiot_alert_rule` / `aiot_alert_record` | `threshold` is stored as VARCHAR and parsed at evaluation time; a dedicated debounce index `(device_id, rule_id, trigger_time DESC) WHERE handle_status=0` supports the hot-path query fired on every telemetry message; `diagnosis_status/root_cause/suggestion/confidence` columns exist for the AI writeback |
-| `aiot_knowledge` | **RAG vector table** — `embedding vector(768)` holds `nomic-embed-text` output, indexed `USING hnsw (embedding vector_cosine_ops)` for approximate nearest-neighbor search; `device_model`/`product_id` columns let queries narrow by equipment model before the vector search runs |
+| `aiot_knowledge` | **RAG vector table** — `embedding vector(1024)` holds `qwen3-embedding:0.6b` output, indexed `USING hnsw (embedding vector_cosine_ops)` for approximate nearest-neighbor search; `device_model`/`product_id` columns let queries narrow by equipment model before the vector search runs |
 | `aiot_outbox` *(owned by this service)* | Transactional outbox landing table; a partial index `(created_at) WHERE published_at IS NULL` keeps the "pending" query fast, and a daily job purges published rows past the retention window |
 
 All primary keys are `bigint`, generated by an in-process Snowflake ID generator (41-bit timestamp | 10-bit machine id | 12-bit sequence) — no DB auto-increment anywhere.
@@ -135,8 +135,8 @@ All primary keys are `bigint`, generated by an in-process Snowflake ID generator
 cd ../spark-ai-infra && docker compose up -d
 
 # 2. Start Ollama locally and pull the models this service calls
-ollama pull qwen2.5:7b
-ollama pull nomic-embed-text
+ollama pull qwen3.5:4b
+ollama pull qwen3-embedding:0.6b
 
 # 3. Run the service (default port 8080)
 ./gradlew bootRun
@@ -172,7 +172,7 @@ Full setup details (schema bootstrap, Redis keyspace-notification config, runnin
 
 - **Transactional outbox kills phantom data.** Telemetry and alert writes commit alongside their outbox row in the same transaction; a scheduled relay publishes to Kafka afterward. That turns a classic at-most-once bug — "the DB transaction rolled back but the Kafka message already went out" — into at-least-once delivery, using one table and one `@Scheduled` method.
 - **The LLM decides its own diagnosis strategy.** `DiagnosisAgentService` doesn't stuff a fixed prompt with telemetry — it hands the model 5 MCP tools (device status, history, alerts, manual search) and lets it choose what to call. Below an 80% confidence threshold, it automatically retries once with a 120-minute widened history window.
-- **pgvector + HNSW for millisecond semantic search.** Device manuals and incident write-ups are embedded into 768-dimensional vectors and indexed with HNSW; combined with `device_model` metadata filtering, RAG lookups replace naive full-text search with sub-second approximate nearest-neighbor retrieval.
+- **pgvector + HNSW for millisecond semantic search.** Device manuals and incident write-ups are embedded into 1024-dimensional vectors and indexed with HNSW; combined with `device_model` metadata filtering, RAG lookups replace naive full-text search with sub-second approximate nearest-neighbor retrieval.
 - **Database-level locking, not JVM locking, for alert debounce.** Deduplication moved from an in-JVM `synchronized` block to `pg_advisory_xact_lock`, verified with a dedicated concurrency test to hold across threads *and* across multiple service instances.
 - **116 unit tests cover the hot paths.** Telemetry ingestion, all 6 alert operators, outbox relay, diagnosis confidence branching, and MCP tool mapping are each independently tested — core-path changes get verified in seconds locally, not in a shared staging environment.
 
