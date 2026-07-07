@@ -2,6 +2,8 @@ package com.spark.agent.service;
 
 import com.spark.agent.config.AppProperties;
 import com.spark.agent.repository.DeviceRepository;
+import com.spark.agent.ws.DeviceStatusEvent;
+import com.spark.agent.ws.WsPushService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.Message;
@@ -22,6 +24,7 @@ public class DeviceHeartbeatService implements MessageListener {
     private final StringRedisTemplate redisTemplate;
     private final DeviceRepository deviceRepository;
     private final AppProperties appProperties;
+    private final WsPushService wsPushService;
 
     /**
      * Called on every MQTT message. Writes to DB only on offline→online transition
@@ -36,6 +39,7 @@ public class DeviceHeartbeatService implements MessageListener {
         Boolean wasAbsent = redisTemplate.opsForValue().setIfAbsent(key, "1", ttl);
         if (Boolean.TRUE.equals(wasAbsent)) {
             deviceRepository.markOnline(deviceId, LocalDateTime.now());
+            wsPushService.pushDeviceStatus(new DeviceStatusEvent(deviceKey, true, LocalDateTime.now()));
             log.info("[Heartbeat] {} came online", deviceKey);
         } else {
             // device already online — push the expiry window, no DB write
@@ -54,6 +58,7 @@ public class DeviceHeartbeatService implements MessageListener {
         deviceRepository.findByDeviceKeyAndDeleted(deviceKey, (short) 0)
                 .ifPresent(device -> {
                     deviceRepository.markOffline(device.getId(), LocalDateTime.now());
+                    wsPushService.pushDeviceStatus(new DeviceStatusEvent(deviceKey, false, LocalDateTime.now()));
                     log.info("[Heartbeat] {} went offline (explicit event)", deviceKey);
                 });
     }
@@ -69,6 +74,7 @@ public class DeviceHeartbeatService implements MessageListener {
                 .forEach(device -> {
                     redisTemplate.delete(appProperties.getDeviceHeartbeatKeyPrefix() + device.getDeviceKey());
                     deviceRepository.markOffline(device.getId(), now);
+                    wsPushService.pushDeviceStatus(new DeviceStatusEvent(device.getDeviceKey(), false, now));
                     log.info("[Heartbeat] {} went offline (emulator crash)", device.getDeviceKey());
                 });
     }
@@ -97,6 +103,7 @@ public class DeviceHeartbeatService implements MessageListener {
         deviceRepository.findByDeviceKeyAndDeleted(deviceKey, (short) 0)
                 .ifPresent(device -> {
                     deviceRepository.markOffline(device.getId(), LocalDateTime.now());
+                    wsPushService.pushDeviceStatus(new DeviceStatusEvent(deviceKey, false, LocalDateTime.now()));
                     log.info("[Heartbeat] {} went offline (key expired)", deviceKey);
                 });
     }

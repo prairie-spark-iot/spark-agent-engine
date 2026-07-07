@@ -4,6 +4,7 @@ import com.spark.agent.config.AppProperties;
 import com.spark.agent.dto.DiagnosisResult;
 import com.spark.agent.entity.AlertRecord;
 import com.spark.agent.repository.AlertRecordRepository;
+import com.spark.agent.ws.WsPushService;
 import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
@@ -35,6 +37,7 @@ public class DiagnosisAgentService {
     private final AppProperties appProperties;
     private final DiagnosisPromptBuilder promptBuilder;
     private final ObjectMapper objectMapper;
+    private final WsPushService wsPushService;
 
     private ChatClient chatClient;
 
@@ -79,6 +82,12 @@ public class DiagnosisAgentService {
                         .user(userPrompt)
                         .call()
                         .content();
+                // content() is @Nullable; a small local model can finish a turn with no
+                // final text, and feeding that into the next .user() call below would
+                // otherwise crash with Spring AI's internal "text cannot be null or empty".
+                if (!StringUtils.hasText(investigation)) {
+                    throw new IllegalStateException("LLM investigation call returned empty content");
+                }
                 return chatClient.prompt()
                         .system(promptBuilder.structureSystemPrompt())
                         .user(investigation)
@@ -101,6 +110,7 @@ public class DiagnosisAgentService {
         record.setDiagnosisTime(LocalDateTime.now());
         record.setDeleted((short) 0); // a diagnosis writeback must never leave the record logically deleted
         alertRecordRepository.save(record);
+        wsPushService.pushDiagnosis(record.getId(), record);
 
         log.info("[Diagnosis] alert={} status={} confidence={}", record.getId(),
                 autoDiagnosed ? "AUTO_DIAGNOSED" : "HUMAN_REVIEW_REQUIRED", result.confidence());

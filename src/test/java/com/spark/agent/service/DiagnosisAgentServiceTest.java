@@ -4,6 +4,7 @@ import com.spark.agent.config.AppProperties;
 import com.spark.agent.dto.DiagnosisResult;
 import com.spark.agent.entity.AlertRecord;
 import com.spark.agent.repository.AlertRecordRepository;
+import com.spark.agent.ws.WsPushService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +38,8 @@ class DiagnosisAgentServiceTest {
     private ChatClient.CallResponseSpec callResponseSpec;
     @Mock
     private ToolCallbackProvider deviceToolCallbacks;
+    @Mock
+    private WsPushService wsPushService;
     private AppProperties appProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -50,10 +53,14 @@ class DiagnosisAgentServiceTest {
         appProperties = new AppProperties();
         promptBuilder = new DiagnosisPromptBuilder();
         service = new DiagnosisAgentService(alertRecordRepository, chatClientBuilder,
-                deviceToolCallbacks, appProperties, promptBuilder, objectMapper);
+                deviceToolCallbacks, appProperties, promptBuilder, objectMapper, wsPushService);
 
         when(chatClientBuilder.build()).thenReturn(chatClient);
         service.init();
+
+        // ChatClient.content() is @Nullable; default it to non-blank so tests that don't
+        // care about the investigation text still reach the structuring entity() call.
+        lenient().when(callResponseSpec.content()).thenReturn("Investigation notes for the alert.");
 
         sampleAlert = new AlertRecord();
         sampleAlert.setId(100L);
@@ -125,6 +132,7 @@ class DiagnosisAgentServiceTest {
             assertNotNull(record.getDiagnosisTime());
             return true;
         }));
+        verify(wsPushService).pushDiagnosis(eq(100L), any(AlertRecord.class));
     }
 
     @Test
@@ -140,6 +148,7 @@ class DiagnosisAgentServiceTest {
 
         verify(alertRecordRepository).save(argThat(record ->
                 record.getDiagnosisStatus() == 1));
+        verify(wsPushService).pushDiagnosis(eq(100L), any(AlertRecord.class));
     }
 
     @Test
@@ -218,6 +227,22 @@ class DiagnosisAgentServiceTest {
 
         verify(alertRecordRepository).save(argThat(record ->
                 record.getDeleted() == 0));
+    }
+
+    @Test
+    void diagnose_blankInvestigationContent_returnsErrorResultWithoutCallingEntity() {
+        when(alertRecordRepository.findById(100L)).thenReturn(Optional.of(sampleAlert));
+
+        when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.call()).thenReturn(callResponseSpec);
+        when(callResponseSpec.content()).thenReturn("   ");
+
+        DiagnosisResult result = service.diagnose(100L);
+
+        assertEquals(0, result.confidence());
+        assertTrue(result.suggestion().contains("Inference failed"));
+        assertTrue(result.suggestion().contains("empty content"));
+        verify(callResponseSpec, never()).entity(DiagnosisResult.class);
     }
 
     @Test
