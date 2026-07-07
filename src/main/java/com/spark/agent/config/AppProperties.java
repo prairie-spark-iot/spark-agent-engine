@@ -4,6 +4,8 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Data
 @Component
 @ConfigurationProperties(prefix = "app")
@@ -26,4 +28,10 @@ public class AppProperties {
 
     private int outboxPurgeRetentionDays = 7;
     private String outboxPurgeCron = "0 0 3 * * *";
+
+    /** how often TelemetryWsBridgeConsumer flushes its per-device coalescing buffer to WebSocket clients */
+    private int telemetryWsCoalesceIntervalMs = 400;
+
+    /** exact browser origins allowed to open the /ws STOMP endpoint — dev frontend by default */
+    private List<String> wsAllowedOrigins = List.of("http://localhost:3000");
 }

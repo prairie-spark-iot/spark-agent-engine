@@ -167,6 +167,13 @@ app:
   # outbox purge — deletes published aiot_outbox rows older than this many days
   outbox-purge-retention-days: 7
   outbox-purge-cron: "0 0 3 * * *"   # daily at 03:00
+  # WebSocket telemetry bridge — how often TelemetryWsBridgeConsumer flushes its per-device
+  # coalescing buffer to connected WS clients
+  telemetry-ws-coalesce-interval-ms: 400
+  # exact browser origins allowed to open the /ws STOMP endpoint (no wildcard — WS connections
+  # aren't subject to normal browser CORS/same-origin protection the way REST fetch/XHR is)
+  ws-allowed-origins:
+    - http://localhost:3000
 
 # ── Custom: Kafka Topics ──────────────────────────────────────────────────
 kafka:
