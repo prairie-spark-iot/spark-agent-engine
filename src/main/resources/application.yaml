@@ -159,7 +159,10 @@ app:
   diagnosis-confidence-threshold: 80
   # below this confidence, diagnose() retries once with a wider (120-min) history window
   diagnosis-retry-confidence-threshold: 40
-  # timeout for a single LLM inference call during diagnosis (seconds)
+  # timeout for a single LLM inference call during diagnosis (seconds). Also used as the
+  # Ollama RestClient's HTTP read timeout (see OllamaHttpClientConfig) so a slow/hung call
+  # actually closes its socket instead of just being abandoned by orTimeout() while it keeps
+  # occupying Ollama's single (-np 1) inference slot.
   diagnosis-timeout-seconds: 150
   # outbox relay — polls aiot_outbox for unpublished rows and sends them to Kafka
   outbox-relay-interval-ms: 2000
