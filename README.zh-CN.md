@@ -1,6 +1,6 @@
 <div align="center">
 
-# spark-agent-engine
+# ⚡ spark-agent-engine
 
 **工业 IoT 设备遥测接入、规则告警与自主 AI 根因诊断引擎。**
 一个 Spring Boot 4 / Java 25 服务 —— 从一条 MQTT 报文，到一份 LLM 诊断结论，全程无需人工介入。

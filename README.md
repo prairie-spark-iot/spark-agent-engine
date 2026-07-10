@@ -1,6 +1,6 @@
 <div align="center">
 
-# spark-agent-engine
+# ⚡ spark-agent-engine
 
 **Industrial IoT telemetry ingestion, alerting, and autonomous AI root-cause diagnosis.**
 One Spring Boot 4 / Java 25 service — from MQTT packet to LLM diagnosis, with no human in the loop.
