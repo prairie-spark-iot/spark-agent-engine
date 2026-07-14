@@ -59,12 +59,21 @@ spring:
       properties:
         enable.idempotence: true                    # dedup retries; Kafka 4.x default, made explicit
         max.in.flight.requests.per.connection: 5    # max with idempotence enabled
+      # Makes the producer transactional: OutboxPublisher wraps a Kafka send and the
+      # outbox row's published_at update in one @Transactional method, so a crash between
+      # "sent" and "marked published" can no longer happen. Auto-configures a
+      # KafkaTransactionManager bean and (per Boot's Kafka auto-configuration) wires it into
+      # every @KafkaListener container too — see consumer.properties.isolation.level below.
+      transaction-id-prefix: tx-
     consumer:
       properties:
         # diagnose() can run 2 sequential LLM calls (up to 4 with the low-confidence retry),
         # each with a 150s timeout; default 300000ms was borderline and tripped false
         # rebalances (see listener.concurrency comment below for why calls queue up).
         max.poll.interval.ms: 600000
+        # Required once the producer is transactional: without this, consumers default to
+        # read_uncommitted and could observe a record from a Kafka transaction that later aborts.
+        isolation.level: read_committed
     listener:
       missing-topics-fatal: false   # don't crash if a consumer topic hasn't been created yet
       # iot.alert.triggered has 6 partitions, but Ollama's llama-server on this box runs

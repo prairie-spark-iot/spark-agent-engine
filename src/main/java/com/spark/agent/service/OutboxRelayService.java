@@ -2,7 +2,6 @@ package com.spark.agent.service;
 
 import com.spark.agent.config.AppProperties;
 import com.spark.agent.entity.OutboxMessage;
-import com.spark.agent.kafka.KafkaProducerService;
 import com.spark.agent.repository.OutboxMessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,7 +13,6 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -27,7 +25,7 @@ public class OutboxRelayService {
     );
 
     private final OutboxMessageRepository outboxMessageRepository;
-    private final KafkaProducerService kafkaProducerService;
+    private final OutboxPublisher outboxPublisher;
     private final ObjectMapper objectMapper;
     private final AppProperties appProperties;
 
@@ -44,8 +42,7 @@ public class OutboxRelayService {
                     continue;
                 }
                 String key = extractDeviceKey(msg.getPayload());
-                kafkaProducerService.sendRaw(topic, key, msg.getPayload()).get(5, TimeUnit.SECONDS);
-                outboxMessageRepository.markPublished(msg.getId(), LocalDateTime.now());
+                outboxPublisher.publish(msg, topic, key);
             } catch (Exception e) {
                 log.warn("[OutboxRelay] Failed to publish outbox id={}, will retry next cycle: {}", msg.getId(), e.getMessage());
             }

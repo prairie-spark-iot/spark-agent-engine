@@ -2,7 +2,6 @@ package com.spark.agent.service;
 
 import com.spark.agent.config.AppProperties;
 import com.spark.agent.entity.OutboxMessage;
-import com.spark.agent.kafka.KafkaProducerService;
 import com.spark.agent.repository.OutboxMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,13 +9,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
-import org.springframework.kafka.support.SendResult;
-import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -28,18 +23,16 @@ class OutboxRelayServiceTest {
     @Mock
     private OutboxMessageRepository outboxMessageRepository;
     @Mock
-    private KafkaProducerService kafkaProducerService;
+    private OutboxPublisher outboxPublisher;
 
-    private ObjectMapper objectMapper;
     private AppProperties appProperties;
     private OutboxRelayService relayService;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
         appProperties = new AppProperties();
         appProperties.setOutboxRelayBatchSize(100);
-        relayService = new OutboxRelayService(outboxMessageRepository, kafkaProducerService, objectMapper, appProperties);
+        relayService = new OutboxRelayService(outboxMessageRepository, outboxPublisher, new tools.jackson.databind.ObjectMapper(), appProperties);
     }
 
     private OutboxMessage outboxMessage(long id, String eventType, String deviceKey) {
@@ -53,11 +46,6 @@ class OutboxRelayServiceTest {
         return msg;
     }
 
-    @SuppressWarnings("unchecked")
-    private CompletableFuture<SendResult<Object, Object>> completedSend() {
-        return CompletableFuture.completedFuture(mock(SendResult.class));
-    }
-
     @Test
     void relay_emptyBatch_doesNothing() {
         when(outboxMessageRepository.findByPublishedAtIsNullOrderByCreatedAtAsc(any(Pageable.class)))
@@ -65,22 +53,18 @@ class OutboxRelayServiceTest {
 
         relayService.relay();
 
-        verifyNoInteractions(kafkaProducerService);
-        verify(outboxMessageRepository, never()).markPublished(any(), any());
+        verifyNoInteractions(outboxPublisher);
     }
 
     @Test
-    void relay_successfulSend_marksPublished() {
+    void relay_successfulSend_delegatesToPublisher() {
         OutboxMessage msg = outboxMessage(1L, "device.data", "DK_TEST_001");
         when(outboxMessageRepository.findByPublishedAtIsNullOrderByCreatedAtAsc(any(Pageable.class)))
                 .thenReturn(List.of(msg));
-        when(kafkaProducerService.sendRaw("iot.device.data", "DK_TEST_001", msg.getPayload()))
-                .thenReturn(completedSend());
 
         relayService.relay();
 
-        verify(kafkaProducerService).sendRaw("iot.device.data", "DK_TEST_001", msg.getPayload());
-        verify(outboxMessageRepository).markPublished(eq(1L), any(LocalDateTime.class));
+        verify(outboxPublisher).publish(msg, "iot.device.data", "DK_TEST_001");
     }
 
     @Test
@@ -88,33 +72,25 @@ class OutboxRelayServiceTest {
         OutboxMessage msg = outboxMessage(2L, "alert.triggered", "DK_TEST_002");
         when(outboxMessageRepository.findByPublishedAtIsNullOrderByCreatedAtAsc(any(Pageable.class)))
                 .thenReturn(List.of(msg));
-        when(kafkaProducerService.sendRaw("iot.alert.triggered", "DK_TEST_002", msg.getPayload()))
-                .thenReturn(completedSend());
 
         relayService.relay();
 
-        verify(kafkaProducerService).sendRaw("iot.alert.triggered", "DK_TEST_002", msg.getPayload());
-        verify(outboxMessageRepository).markPublished(eq(2L), any(LocalDateTime.class));
+        verify(outboxPublisher).publish(msg, "iot.alert.triggered", "DK_TEST_002");
     }
 
     @Test
-    void relay_sendFailure_leavesRowUnpublishedAndContinuesBatch() {
+    void relay_publishFailure_continuesBatch() {
         OutboxMessage failing = outboxMessage(3L, "device.data", "DK_TEST_003");
         OutboxMessage succeeding = outboxMessage(4L, "device.data", "DK_TEST_004");
         when(outboxMessageRepository.findByPublishedAtIsNullOrderByCreatedAtAsc(any(Pageable.class)))
                 .thenReturn(List.of(failing, succeeding));
+        doThrow(new RuntimeException("kafka unreachable"))
+                .when(outboxPublisher).publish(failing, "iot.device.data", "DK_TEST_003");
 
-        CompletableFuture<SendResult<Object, Object>> failedFuture = new CompletableFuture<>();
-        failedFuture.completeExceptionally(new ExecutionException("kafka unreachable", new RuntimeException()));
-        when(kafkaProducerService.sendRaw("iot.device.data", "DK_TEST_003", failing.getPayload()))
-                .thenReturn(failedFuture);
-        when(kafkaProducerService.sendRaw("iot.device.data", "DK_TEST_004", succeeding.getPayload()))
-                .thenReturn(completedSend());
+        assertDoesNotThrow(() -> relayService.relay());
 
-        relayService.relay();
-
-        verify(outboxMessageRepository, never()).markPublished(eq(3L), any());
-        verify(outboxMessageRepository).markPublished(eq(4L), any(LocalDateTime.class));
+        verify(outboxPublisher).publish(failing, "iot.device.data", "DK_TEST_003");
+        verify(outboxPublisher).publish(succeeding, "iot.device.data", "DK_TEST_004");
     }
 
     @Test
@@ -125,8 +101,7 @@ class OutboxRelayServiceTest {
 
         assertDoesNotThrow(() -> relayService.relay());
 
-        verifyNoInteractions(kafkaProducerService);
-        verify(outboxMessageRepository, never()).markPublished(any(), any());
+        verifyNoInteractions(outboxPublisher);
     }
 
     @Test
